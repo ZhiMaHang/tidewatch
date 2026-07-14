@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "QuotaBar",
+    name: "Tidewatch",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "QuotaBar",
-            path: "Sources/QuotaBar"
+            name: "Tidewatch",
+            path: "Sources/Tidewatch"
         )
     ]
 )

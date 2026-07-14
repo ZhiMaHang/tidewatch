@@ -8,7 +8,7 @@ swift build -c release
 APP=dist/Tidewatch.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/QuotaBar "$APP/Contents/MacOS/Tidewatch"
+cp .build/release/Tidewatch "$APP/Contents/MacOS/Tidewatch"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
