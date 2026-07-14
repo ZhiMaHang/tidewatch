@@ -28,6 +28,11 @@ struct AccountCardView: View {
                 }
                 Spacer()
                 Menu {
+                    Button("重命名…") {
+                        if let name = RenamePrompt.run(current: account.label) {
+                            store.relabel(account, to: name)
+                        }
+                    }
                     Button("刷新") { Task { await store.refresh(account, force: true) } }
                     Divider()
                     Button("移除账号", role: .destructive) { store.removeAccount(account) }
