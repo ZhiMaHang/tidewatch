@@ -72,16 +72,20 @@ enum CodexProvider {
                 KeychainStore.save(data, key: account.id.uuidString)
             }
         case .codexAuthFile(let path):
-            // refresh token 会轮转,必须写回 CLI 的存储,否则会把用户的 Codex CLI 登录搞失效
+            // refresh token 会轮转,必须写回 CLI 的存储,否则会把用户的 Codex CLI 登录搞失效。
+            // 用原始 dict 读改写,保留 codex-rs 可能依赖的未知字段(agent_identity 等)
             let url = URL(fileURLWithPath: path)
             let fileExists = FileManager.default.fileExists(atPath: path)
-            var file = readCLIAuthData(path: path).flatMap { try? JSONDecoder().decode(CodexAuthFile.self, from: $0) }
-                ?? CodexAuthFile(OPENAI_API_KEY: nil, auth_mode: "chatgpt", last_refresh: nil, tokens: nil)
-            file.tokens = tokens
-            file.last_refresh = ISO8601DateFormatter.flexible.string(from: Date())
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            guard let out = try? encoder.encode(file) else { return }
+            let raw = readCLIAuthData(path: path)
+            var obj = (raw.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? ["auth_mode": "chatgpt"]
+            var tokensObj = (obj["tokens"] as? [String: Any]) ?? [:]
+            tokensObj["access_token"] = tokens.access_token
+            if let v = tokens.account_id { tokensObj["account_id"] = v }
+            if let v = tokens.id_token { tokensObj["id_token"] = v }
+            if let v = tokens.refresh_token { tokensObj["refresh_token"] = v }
+            obj["tokens"] = tokensObj
+            obj["last_refresh"] = ISO8601DateFormatter.flexible.string(from: Date())
+            guard let out = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) else { return }
             if fileExists {
                 try? out.write(to: url, options: .atomic)
                 try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)

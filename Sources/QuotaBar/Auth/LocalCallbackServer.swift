@@ -12,7 +12,10 @@ final class LocalCallbackServer: @unchecked Sendable {
 
     /// 启动并等待回调,返回 query 参数;超时或被取消则抛错
     func waitForCallback(expectedState: String, timeout: TimeInterval = 300) async throws -> [String: String] {
-        let listener = try NWListener(using: .tcp, on: NWEndpoint.Port(rawValue: port)!)
+        // 只绑回环地址,拒绝局域网访问
+        let params = NWParameters.tcp
+        params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: port)!)
+        let listener = try NWListener(using: params)
         self.listener = listener
 
         return try await withThrowingTaskGroup(of: [String: String].self) { group in

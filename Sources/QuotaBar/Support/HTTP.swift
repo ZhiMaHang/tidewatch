@@ -34,9 +34,10 @@ enum HTTP {
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         headers.forEach { req.setValue($1, forHTTPHeaderField: $0) }
-        var comps = URLComponents()
-        comps.queryItems = fields.map { URLQueryItem(name: $0.key, value: $0.value) }
-        req.httpBody = (comps.percentEncodedQuery ?? "").data(using: .utf8)
+        let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        func enc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: unreserved) ?? s }
+        let body = fields.map { "\(enc($0.key))=\(enc($0.value))" }.sorted().joined(separator: "&")
+        req.httpBody = body.data(using: .utf8)
         let (data, http) = try await send(req)
         if http.statusCode == 401 || http.statusCode == 403 { throw QuotaError.unauthorized }
         guard (200..<300).contains(http.statusCode) else {
