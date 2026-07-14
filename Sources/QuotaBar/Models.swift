@@ -81,6 +81,12 @@ struct Account: Codable, Identifiable, Equatable {
     var payment: PaymentMethod? = nil
 }
 
+struct DesignProject: Identifiable, Equatable {
+    var id: String
+    var name: String
+    var url: String?
+}
+
 struct UsageWindow: Equatable {
     var key: String
     var title: String

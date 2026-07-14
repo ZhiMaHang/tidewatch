@@ -6,6 +6,8 @@ import Observation
 final class UsageStore {
     var accounts: [Account] = []
     var states: [UUID: AccountState] = [:]
+    /// 每个 Claude 账号的 Claude Design 项目列表(有 design 登录才有)
+    var designProjects: [UUID: [DesignProject]] = [:]
     var lastRefreshAt: Date?
     /// 「添加账号」窗口当前要添加的提供方(nil = 窗口空置)。不持久化,仅驱动独立窗口
     var pendingAddProvider: Provider?
@@ -85,6 +87,7 @@ final class UsageStore {
             case .claude:
                 let (snapshot, _) = try await ClaudeProvider.fetchUsage(for: account)
                 states[account.id] = .loaded(snapshot)
+                Task { [weak self] in await self?.refreshDesign(account) } // 有 design 登录才拉,best-effort
             case .codex:
                 let (snapshot, tokens) = try await CodexProvider.fetchUsage(for: account)
                 states[account.id] = .loaded(snapshot)
@@ -130,8 +133,10 @@ final class UsageStore {
     func removeAccount(_ account: Account) {
         accounts.removeAll { $0.id == account.id }
         states[account.id] = nil
+        designProjects[account.id] = nil
         if case .managed = account.source {
             KeychainStore.delete(key: account.id.uuidString)
+            KeychainStore.delete(key: DesignProvider.keychainKey(account))
         }
         AccountsRepository.save(accounts)
     }
@@ -152,6 +157,14 @@ final class UsageStore {
         guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
         accounts[idx].payment = payment
         AccountsRepository.save(accounts)
+    }
+
+    /// 拉该账号的 Claude Design 项目(仅当已 design 登录);best-effort,失败不打扰
+    func refreshDesign(_ account: Account) async {
+        guard account.provider == .claude, DesignProvider.hasCredentials(for: account) else { return }
+        if let projects = try? await DesignProvider.fetchProjects(for: account) {
+            designProjects[account.id] = projects
+        }
     }
 
     // MARK: 菜单栏文案

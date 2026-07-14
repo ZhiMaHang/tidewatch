@@ -66,6 +66,17 @@ struct AccountCardView: View {
                         case .cancel: break
                         }
                     }
+                    if account.provider == .claude {
+                        Button(L("登录 Claude Design…", "Sign in to Claude Design…")) {
+                            guard let r = DesignLoginPrompt.run() else { return }
+                            Task {
+                                if let creds = try? await ClaudeDesignOAuth.exchange(pastedCode: r.code, pkce: r.pkce),
+                                   (try? DesignProvider.persist(creds, for: account)) != nil {
+                                    await store.refreshDesign(account)
+                                }
+                            }
+                        }
+                    }
                     Button(L("刷新", "Refresh")) { Task { await store.refresh(account, force: true) } }
                     Divider()
                     Button(L("移除账号", "Remove account"), role: .destructive) { store.removeAccount(account) }
@@ -99,6 +110,21 @@ struct AccountCardView: View {
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
+                }
+            }
+
+            if let projects = store.designProjects[account.id], !projects.isEmpty {
+                Divider().padding(.vertical, 1)
+                Text(L("Claude Design 项目 (\(projects.count))", "Claude Design projects (\(projects.count))"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(projects) { project in
+                    Link(destination: URL(string: project.url ?? "https://claude.ai/design") ?? URL(string: "https://claude.ai/design")!) {
+                        Label(project.name, systemImage: "paintpalette")
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
