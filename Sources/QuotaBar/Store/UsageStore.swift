@@ -111,6 +111,10 @@ final class UsageStore {
                 let (snapshot, tokens) = try await CodexProvider.fetchUsage(for: account)
                 states[account.id] = .loaded(snapshot)
                 updateLabelIfNeeded(account, email: snapshot.email ?? tokens.id_token.flatMap(CodexProvider.email(fromIDToken:)), plan: snapshot.planType)
+            case .glm:
+                let snapshot = try await GLMProvider.fetchUsage(for: account)
+                states[account.id] = .loaded(snapshot)
+                updateLabelIfNeeded(account, email: nil, plan: snapshot.planType)
             }
         } catch QuotaError.unauthorized {
             states[account.id] = .needsReauth(L("凭据已失效,请重新登录", "Credentials expired, please sign in again"))
@@ -136,12 +140,17 @@ final class UsageStore {
 
     // MARK: 账号管理
 
-    /// 返回 false 表示同来源账号已存在(managed 账号各有独立 token,不算重复)
+    /// 返回 false 表示同来源账号已存在。只对"指向同一文件/存储"的来源去重
+    /// (codexAuthFile / claudeCLI);managed 与 glmApiKey 各自独立,不去重。
     @discardableResult
     func addAccount(_ account: Account) -> Bool {
-        if account.source != .managed,
-           accounts.contains(where: { $0.provider == account.provider && $0.source == account.source }) {
-            return false
+        switch account.source {
+        case .codexAuthFile, .claudeCLI:
+            if accounts.contains(where: { $0.provider == account.provider && $0.source == account.source }) {
+                return false
+            }
+        case .managed, .glmApiKey:
+            break
         }
         accounts.append(account)
         AccountsRepository.save(accounts)
@@ -154,9 +163,14 @@ final class UsageStore {
         states[account.id] = nil
         designProjects[account.id] = nil
         designAvailable[account.id] = nil
-        if case .managed = account.source {
+        switch account.source {
+        case .managed:
             KeychainStore.delete(key: account.id.uuidString)
             KeychainStore.delete(key: DesignProvider.keychainKey(account))
+        case .glmApiKey:
+            KeychainStore.delete(key: account.id.uuidString) // GLM API key
+        default:
+            break
         }
         KeychainStore.delete(key: DesignProvider.rescueKey(account)) // 清 design rescue 残留
         AccountsRepository.save(accounts)

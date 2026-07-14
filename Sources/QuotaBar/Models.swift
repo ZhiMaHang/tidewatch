@@ -3,12 +3,14 @@ import Foundation
 enum Provider: String, Codable, CaseIterable, Identifiable {
     case claude
     case codex
+    case glm
 
     var id: String { rawValue }
     var displayName: String {
         switch self {
         case .claude: return "Claude"
         case .codex: return "Codex"
+        case .glm: return "GLM"
         }
     }
 }
@@ -21,6 +23,8 @@ enum CredentialSource: Codable, Equatable {
     case codexAuthFile(path: String)
     /// 实时读取 Claude Code CLI 的凭据:钥匙串 "Claude Code-credentials",或指定 credentials.json 路径
     case claudeCLI(credentialsFilePath: String?)
+    /// GLM(z.ai 海外版)API key,存在 QuotaBar 钥匙串,按账号 id 取
+    case glmApiKey
 }
 
 enum PaymentType: String, Codable, CaseIterable {

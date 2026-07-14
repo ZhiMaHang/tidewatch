@@ -52,5 +52,7 @@ func credentialLockKey(_ account: Account) -> String {
         return "codex-file:\(URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path)"
     case .claudeCLI(let path):
         return "claude-cli:\(path ?? "default")"
+    case .glmApiKey:
+        return "glm:\(account.id.uuidString)"
     }
 }

@@ -131,11 +131,27 @@ struct AccountCardView: View {
     }
 
     private var providerBadge: some View {
-        Text(account.provider == .claude ? "C" : "X")
+        Text(badgeLetter)
             .font(.system(size: 12, weight: .bold, design: .rounded))
             .frame(width: 22, height: 22)
-            .background(account.provider == .claude ? Color.orange.opacity(0.85) : Color.teal.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
+            .background(badgeColor.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
             .foregroundStyle(.white)
+    }
+
+    private var badgeLetter: String {
+        switch account.provider {
+        case .claude: return "C"
+        case .codex: return "X"
+        case .glm: return "G"
+        }
+    }
+
+    private var badgeColor: Color {
+        switch account.provider {
+        case .claude: return .orange
+        case .codex: return .teal
+        case .glm: return .indigo
+        }
     }
 
     /// 徽章文案:去掉 claude_/chatgpt_ 前缀再大写(claude_max -> MAX,pro -> PRO)
@@ -154,6 +170,8 @@ struct AccountCardView: View {
             return path == CodexProvider.defaultAuthPath ? L("本机 Codex CLI", "Local Codex CLI") : (path as NSString).abbreviatingWithTildeInPath
         case .claudeCLI(let path):
             return path == nil ? L("本机 Claude Code", "Local Claude Code") : ((path! as NSString).abbreviatingWithTildeInPath)
+        case .glmApiKey:
+            return "z.ai API key"
         }
     }
 }

@@ -81,7 +81,7 @@ enum DesignProvider {
                                                       "No designOauth in credentials (run /design-login first)"))
             }
             return creds
-        case .codexAuthFile:
+        case .codexAuthFile, .glmApiKey:
             throw QuotaError.missingCredentials(L("账号来源类型不匹配", "Account source type mismatch"))
         }
     }
@@ -133,7 +133,7 @@ enum DesignProvider {
                     throw QuotaError.missingCredentials(L("写回钥匙串失败", "Failed to write back to the keychain"))
                 }
             }
-        case .codexAuthFile:
+        case .codexAuthFile, .glmApiKey:
             throw QuotaError.missingCredentials(L("账号来源类型不匹配", "Account source type mismatch"))
         }
         KeychainStore.delete(key: rescueKey(account)) // 写回成功,清掉可能存在的 rescue

@@ -96,6 +96,8 @@ private func checkOne(_ account: Account) async {
             (snapshot, _) = try await ClaudeProvider.fetchUsage(for: account)
         case .codex:
             (snapshot, _) = try await CodexProvider.fetchUsage(for: account)
+        case .glm:
+            snapshot = try await GLMProvider.fetchUsage(for: account)
         }
         if let plan = snapshot.planType { print("  " + L("套餐: ", "Plan: ") + plan) }
         if let email = snapshot.email { print("  " + L("邮箱: ", "Email: ") + email) }

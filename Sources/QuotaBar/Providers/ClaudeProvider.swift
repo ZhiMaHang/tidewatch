@@ -63,7 +63,7 @@ enum ClaudeProvider {
             }
             throw QuotaError.missingCredentials(L("本机没有 Claude Code CLI 的主账号凭据(桌面版登录只有 MCP 子凭据)。请在终端 claude /login 后重试,或改用应用内登录",
                                                   "No primary Claude Code CLI credentials found (a desktop login only leaves MCP sub-credentials). Run `claude /login` in a terminal and retry, or use in-app login."))
-        case .codexAuthFile:
+        case .codexAuthFile, .glmApiKey:
             throw QuotaError.missingCredentials(L("账号来源类型不匹配", "Account source type mismatch"))
         }
     }
@@ -119,7 +119,7 @@ enum ClaudeProvider {
                     throw QuotaError.missingCredentials(L("写回钥匙串 \(cliKeychainService) 失败", "Failed to write back to keychain \(cliKeychainService)"))
                 }
             }
-        case .codexAuthFile:
+        case .codexAuthFile, .glmApiKey:
             throw QuotaError.missingCredentials(L("账号来源类型不匹配", "Account source type mismatch"))
         }
     }

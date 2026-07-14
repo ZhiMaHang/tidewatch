@@ -65,7 +65,7 @@ enum CodexProvider {
                 throw QuotaError.missingCredentials(L("钥匙串里找不到该账号的 token,请重新登录", "No token for this account in the keychain, please sign in again"))
             }
             return tokens
-        case .claudeCLI:
+        case .claudeCLI, .glmApiKey:
             throw QuotaError.missingCredentials(L("账号来源类型不匹配", "Account source type mismatch"))
         }
     }
@@ -99,7 +99,7 @@ enum CodexProvider {
             } else {
                 try SecureFile.write(out, toPath: path)
             }
-        case .claudeCLI:
+        case .claudeCLI, .glmApiKey:
             throw QuotaError.missingCredentials(L("账号来源类型不匹配", "Account source type mismatch"))
         }
     }

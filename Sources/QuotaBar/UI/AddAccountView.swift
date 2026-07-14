@@ -41,6 +41,7 @@ struct AddAccountView: View {
     @State private var pkce = PKCE()
     @State private var pastedCode = ""
     @State private var customLabel = ""
+    @State private var glmKey = ""
     @State private var busy = false
     @State private var statusText = ""
     @State private var errorText = ""
@@ -52,10 +53,10 @@ struct AddAccountView: View {
             Text(L("添加 \(provider.displayName) 账号", "Add \(provider.displayName) account"))
                 .font(.headline)
 
-            if provider == .claude {
-                claudeFlow
-            } else {
-                codexFlow
+            switch provider {
+            case .claude: claudeFlow
+            case .codex: codexFlow
+            case .glm: glmFlow
             }
 
             if !statusText.isEmpty {
@@ -160,6 +161,55 @@ struct AddAccountView: View {
             }
             onDone()
         } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    // MARK: GLM(z.ai 海外版):填 API key
+
+    private var glmFlow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L("填入 z.ai(海外 GLM)的 API key,就是你在 Claude Code 里设为 ANTHROPIC_AUTH_TOKEN 的那个。",
+                   "Paste your z.ai (overseas GLM) API key — the same value you set as ANTHROPIC_AUTH_TOKEN in Claude Code."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            SecureField(L("z.ai API key", "z.ai API key"), text: $glmKey)
+                .textFieldStyle(.roundedBorder)
+
+            TextField(L("账号备注名(可选)", "Nickname (optional)"), text: $customLabel)
+                .textFieldStyle(.roundedBorder)
+
+            Button(busy ? L("验证中…", "Verifying…") : L("添加", "Add")) {
+                Task { await finishGLM() }
+            }
+            .disabled(glmKey.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+            .keyboardShortcut(.defaultAction)
+
+            Text(L("key 在 z.ai 控制台的 API key 列表 / 订阅页获取(z.ai/manage-apikey)。用量接口未公开文档,可能随时变。",
+                   "Get the key from the z.ai console (z.ai/manage-apikey). The usage endpoint is undocumented and may change."))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    private func finishGLM() async {
+        busy = true
+        defer { busy = false }
+        errorText = ""
+        let key = glmKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = customLabel.trimmingCharacters(in: .whitespaces)
+        let account = Account(id: UUID(), provider: .glm, label: label.isEmpty ? "GLM" : label,
+                              planType: nil, source: .glmApiKey, addedAt: Date())
+        GLMProvider.saveKey(key, for: account)
+        do {
+            let snapshot = try await GLMProvider.fetchUsage(for: account) // 顺便校验 key
+            var final = account
+            final.planType = snapshot.planType
+            _ = store.addAccount(final)
+            onDone()
+        } catch {
+            KeychainStore.delete(key: account.id.uuidString) // 校验失败,删掉暂存的 key
             errorText = error.localizedDescription
         }
     }

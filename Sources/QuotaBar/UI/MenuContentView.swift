@@ -75,6 +75,7 @@ struct MenuContentView: View {
             Menu {
                 Button(L("添加 Claude 账号…", "Add Claude account…")) { openAdd(.claude) }
                 Button(L("添加 Codex 账号…", "Add Codex account…")) { openAdd(.codex) }
+                Button(L("添加 GLM 账号…", "Add GLM account…")) { openAdd(.glm) }
                 Divider()
                 Button(L("Claude Design 项目…", "Claude Design projects…")) {
                     openWindow(id: DesignProjectsWindow.windowID)
@@ -116,6 +117,7 @@ struct MenuContentView: View {
             HStack {
                 Button(L("添加 Claude", "Add Claude")) { openAdd(.claude) }
                 Button(L("添加 Codex", "Add Codex")) { openAdd(.codex) }
+                Button(L("添加 GLM", "Add GLM")) { openAdd(.glm) }
             }
         }
         .padding(24)
