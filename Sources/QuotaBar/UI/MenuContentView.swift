@@ -4,6 +4,9 @@ struct MenuContentView: View {
     @Environment(UsageStore.self) private var store
     @Environment(\.openWindow) private var openWindow
     @State private var isRefreshing = false
+    @State private var listHeight: CGFloat = 0
+
+    private let maxListHeight: CGFloat = 520
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -12,20 +15,32 @@ struct MenuContentView: View {
             if store.accounts.isEmpty {
                 emptyState
             } else {
-                ScrollView {
-                    VStack(spacing: 10) {
-                        ForEach(store.accounts) { account in
-                            AccountCardView(account: account, state: store.states[account.id] ?? .idle)
-                        }
-                    }
-                    .padding(12)
-                }
-                .frame(maxHeight: 480)
+                accountList
             }
             Divider()
             footer
         }
         .frame(width: 340)
+    }
+
+    private var accountList: some View {
+        // ScrollView 在 MenuBarExtra 窗口里没有确定高度会塌缩成 0(卡片全部不显示),
+        // 所以先用背景 GeometryReader 量出内容真实高度,再给 ScrollView 定高(超过上限才滚动)。
+        ScrollView {
+            VStack(spacing: 10) {
+                ForEach(store.accounts) { account in
+                    AccountCardView(account: account, state: store.states[account.id] ?? .idle)
+                }
+            }
+            .padding(12)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: ListHeightKey.self, value: proxy.size.height)
+                }
+            )
+        }
+        .frame(height: min(max(listHeight, 44), maxListHeight))
+        .onPreferenceChange(ListHeightKey.self) { listHeight = $0 }
     }
 
     private func openAdd(_ provider: Provider) {
@@ -114,5 +129,12 @@ struct MenuContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+}
+
+private struct ListHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
