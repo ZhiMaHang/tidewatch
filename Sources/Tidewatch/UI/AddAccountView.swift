@@ -199,7 +199,7 @@ struct AddAccountView: View {
         errorText = ""
         let key = glmKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let label = customLabel.trimmingCharacters(in: .whitespaces)
-        let account = Account(id: UUID(), provider: .glm, label: label.isEmpty ? "GLM" : label,
+        let account = Account(id: UUID(), provider: .glm, label: label.isEmpty ? "z.ai GLM" : label,
                               planType: nil, source: .glmApiKey, addedAt: Date())
         GLMProvider.saveKey(key, for: account)
         do {
