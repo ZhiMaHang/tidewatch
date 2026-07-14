@@ -48,8 +48,9 @@ struct TidewatchApp: App {
 
     @ViewBuilder
     private var menuBarLabel: some View {
-        // 菜单栏只显示图标;各账号额度在点开的面板里看。onAppear 挂这里,不点开也会开始拉取。
-        Image(systemName: "gauge.with.needle")
+        // 菜单栏只显示波浪图标(和 Tidewatch logo 一致,模板图标自适应浅/深色);点击弹出额度面板。
+        // 各账号额度在点开的面板里看。onAppear 挂这里,不点开也会开始拉取。
+        Image(systemName: "water.waves")
             .onAppear { store.start() }
     }
 }
