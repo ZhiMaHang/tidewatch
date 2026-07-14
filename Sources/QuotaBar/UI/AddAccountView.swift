@@ -42,7 +42,7 @@ struct AddAccountView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("添加 \(provider.displayName) 账号")
+            Text(L("添加 \(provider.displayName) 账号", "Add \(provider.displayName) account"))
                 .font(.headline)
 
             if provider == .claude {
@@ -64,7 +64,7 @@ struct AddAccountView: View {
 
             HStack {
                 Spacer()
-                Button("取消") {
+                Button(L("取消", "Cancel")) {
                     callbackServer?.stop()
                     onDone()
                 }
@@ -78,29 +78,30 @@ struct AddAccountView: View {
 
     private var claudeFlow: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("1. 打开浏览器登录要添加的 Claude 账号并授权;\n2. 把回调页显示的授权码粘贴到下面。")
+            Text(L("1. 打开浏览器登录要添加的 Claude 账号并授权;\n2. 把回调页显示的授权码粘贴到下面。",
+                   "1. Open the browser, sign in to the Claude account you want to add, and authorize.\n2. Paste the code shown on the callback page below."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Button("在浏览器中打开授权页") {
+            Button(L("在浏览器中打开授权页", "Open authorization page")) {
                 errorText = ""
                 NSWorkspace.shared.open(ClaudeOAuth.authorizeURL(pkce: pkce))
             }
 
-            TextField("粘贴授权码(形如 xxxx#yyyy)", text: $pastedCode)
+            TextField(L("粘贴授权码(形如 xxxx#yyyy)", "Paste code (like xxxx#yyyy)"), text: $pastedCode)
                 .textFieldStyle(.roundedBorder)
 
-            TextField("账号备注名(可选,如\"个人 Max\")", text: $customLabel)
+            TextField(L("账号备注名(可选,如\"个人 Max\")", "Nickname (optional, e.g. \"Personal Max\")"), text: $customLabel)
                 .textFieldStyle(.roundedBorder)
 
-            Button(busy ? "验证中…" : "完成登录") {
+            Button(busy ? L("验证中…", "Verifying…") : L("完成登录", "Finish login")) {
                 Task { await finishClaude() }
             }
             .disabled(pastedCode.trimmingCharacters(in: .whitespaces).isEmpty || busy)
             .keyboardShortcut(.defaultAction)
 
             Divider()
-            Button("改为导入本机 Claude Code CLI 凭据") {
+            Button(L("改为导入本机 Claude Code CLI 凭据", "Import local Claude Code CLI credentials instead")) {
                 importClaudeCLI()
             }
             .font(.caption)
@@ -119,7 +120,7 @@ struct AddAccountView: View {
                 if label.isEmpty, let email = profile.email { label = email }
                 plan = profile.plan
             }
-            if label.isEmpty { label = "未命名 Claude" }
+            if label.isEmpty { label = L("未命名 Claude", "Unnamed Claude") }
             let account = Account(id: UUID(), provider: .claude, label: label, planType: plan, source: .managed, addedAt: Date())
             if let data = try? JSONEncoder().encode(creds) {
                 KeychainStore.save(data, key: account.id.uuidString)
@@ -133,7 +134,7 @@ struct AddAccountView: View {
 
     private func importClaudeCLI() {
         errorText = ""
-        let account = Account(id: UUID(), provider: .claude, label: "本机 Claude Code", planType: nil, source: .claudeCLI(credentialsFilePath: nil), addedAt: Date())
+        let account = Account(id: UUID(), provider: .claude, label: L("本机 Claude Code", "Local Claude Code"), planType: nil, source: .claudeCLI(credentialsFilePath: nil), addedAt: Date())
         do {
             let creds = try ClaudeProvider.loadCredentials(for: account)
             var final = account
@@ -147,7 +148,7 @@ struct AddAccountView: View {
                 final.label = email
             }
             guard store.addAccount(final) else {
-                errorText = "本机 Claude Code 凭据已经添加过了"
+                errorText = L("本机 Claude Code 凭据已经添加过了", "Local Claude Code credentials are already added")
                 return
             }
             onDone()
@@ -160,23 +161,25 @@ struct AddAccountView: View {
 
     private var codexFlow: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("方式一:导入 Codex CLI 已登录的 auth.json(推荐,多账号可指向不同 CODEX_HOME)")
+            Text(L("方式一:导入 Codex CLI 已登录的 auth.json(推荐,多账号可指向不同 CODEX_HOME)",
+                   "Option 1: import a signed-in Codex CLI auth.json (recommended; point multiple accounts at different CODEX_HOME dirs)"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack {
-                TextField("auth.json 路径", text: $authPath)
+                TextField(L("auth.json 路径", "auth.json path"), text: $authPath)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
-                Button("选择…") { pickAuthFile() }
+                Button(L("选择…", "Choose…")) { pickAuthFile() }
             }
-            Button("导入此 auth.json") { importCodexAuthFile() }
+            Button(L("导入此 auth.json", "Import this auth.json")) { importCodexAuthFile() }
                 .disabled(busy)
 
             Divider()
-            Text("方式二:在浏览器中登录要添加的 ChatGPT 账号(独立 token,不影响 CLI)")
+            Text(L("方式二:在浏览器中登录要添加的 ChatGPT 账号(独立 token,不影响 CLI)",
+                   "Option 2: sign in to the ChatGPT account in the browser (separate token, doesn't affect the CLI)"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Button(busy ? "等待浏览器授权…" : "在浏览器中登录") {
+            Button(busy ? L("等待浏览器授权…", "Waiting for browser…") : L("在浏览器中登录", "Sign in with browser")) {
                 Task { await loginCodex() }
             }
             .disabled(busy)
@@ -202,9 +205,9 @@ struct AddAccountView: View {
         do {
             let tokens = try CodexProvider.loadTokens(for: account)
             var final = account
-            final.label = tokens.id_token.flatMap(CodexProvider.email(fromIDToken:)) ?? "本机 Codex CLI"
+            final.label = tokens.id_token.flatMap(CodexProvider.email(fromIDToken:)) ?? L("本机 Codex CLI", "Local Codex CLI")
             guard store.addAccount(final) else {
-                errorText = "这个 auth.json 已经添加过了"
+                errorText = L("这个 auth.json 已经添加过了", "This auth.json is already added")
                 return
             }
             onDone()
@@ -215,7 +218,7 @@ struct AddAccountView: View {
 
     private func loginCodex() async {
         busy = true
-        statusText = "已打开浏览器,等待授权回调…"
+        statusText = L("已打开浏览器,等待授权回调…", "Browser opened, waiting for the callback…")
         errorText = ""
         defer {
             busy = false
@@ -227,14 +230,14 @@ struct AddAccountView: View {
         do {
             let params = try await server.waitForCallback(expectedState: pkce.state)
             guard let code = params["code"] else {
-                throw QuotaError.oauth(params["error_description"] ?? params["error"] ?? "回调里没有授权码")
+                throw QuotaError.oauth(params["error_description"] ?? params["error"] ?? L("回调里没有授权码", "No authorization code in the callback"))
             }
-            statusText = "正在换取 token…"
+            statusText = L("正在换取 token…", "Exchanging token…")
             let tokens = try await CodexOAuth.exchange(code: code, pkce: pkce)
             let account = Account(
                 id: UUID(),
                 provider: .codex,
-                label: tokens.id_token.flatMap(CodexProvider.email(fromIDToken:)) ?? "未命名 Codex",
+                label: tokens.id_token.flatMap(CodexProvider.email(fromIDToken:)) ?? "",
                 planType: nil,
                 source: .managed,
                 addedAt: Date()

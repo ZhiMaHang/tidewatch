@@ -69,22 +69,22 @@ struct MenuContentView: View {
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.borderless)
-                .help("立即刷新")
+                .help(L("立即刷新", "Refresh now"))
             }
 
             Menu {
-                Button("添加 Claude 账号…") { openAdd(.claude) }
-                Button("添加 Codex 账号…") { openAdd(.codex) }
+                Button(L("添加 Claude 账号…", "Add Claude account…")) { openAdd(.claude) }
+                Button(L("添加 Codex 账号…", "Add Codex account…")) { openAdd(.codex) }
                 Divider()
-                Picker("刷新间隔", selection: Bindable(store).refreshIntervalMinutes) {
+                Picker(L("刷新间隔", "Refresh interval"), selection: Bindable(store).refreshIntervalMinutes) {
                     // Claude 端点社区实测安全轮询 >= 180s
-                    Text("3 分钟").tag(3)
-                    Text("5 分钟").tag(5)
-                    Text("15 分钟").tag(15)
-                    Text("30 分钟").tag(30)
+                    Text(L("3 分钟", "3 min")).tag(3)
+                    Text(L("5 分钟", "5 min")).tag(5)
+                    Text(L("15 分钟", "15 min")).tag(15)
+                    Text(L("30 分钟", "30 min")).tag(30)
                 }
                 Divider()
-                Button("退出 QuotaBar") { NSApplication.shared.terminate(nil) }
+                Button(L("退出 QuotaBar", "Quit QuotaBar")) { NSApplication.shared.terminate(nil) }
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
@@ -100,15 +100,16 @@ struct MenuContentView: View {
             Image(systemName: "gauge.with.needle")
                 .font(.system(size: 36))
                 .foregroundStyle(.secondary)
-            Text("还没有账号")
+            Text(L("还没有账号", "No accounts yet"))
                 .font(.headline)
-            Text("添加 Claude 或 Codex 账号后,这里会显示各账号的订阅额度。")
+            Text(L("添加 Claude 或 Codex 账号后,这里会显示各账号的订阅额度。",
+                   "Add a Claude or Codex account to see its subscription usage here."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             HStack {
-                Button("添加 Claude") { openAdd(.claude) }
-                Button("添加 Codex") { openAdd(.codex) }
+                Button(L("添加 Claude", "Add Claude")) { openAdd(.claude) }
+                Button(L("添加 Codex", "Add Codex")) { openAdd(.codex) }
             }
         }
         .padding(24)
@@ -118,12 +119,12 @@ struct MenuContentView: View {
     private var footer: some View {
         HStack {
             if let t = store.lastRefreshAt {
-                Text("更新于 \(t.formatted(date: .omitted, time: .shortened))")
+                Text(L("更新于 ", "Updated ") + t.formatted(date: .omitted, time: .shortened))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Text("\(store.accounts.count) 个账号")
+            Text(L("\(store.accounts.count) 个账号", "\(store.accounts.count) accounts"))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }

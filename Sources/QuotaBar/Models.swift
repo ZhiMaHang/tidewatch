@@ -70,10 +70,10 @@ enum QuotaError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .http(let code, let body): return "HTTP \(code): \(String(body.prefix(160)))"
-        case .unauthorized: return "凭据已失效,需要重新登录"
+        case .unauthorized: return L("凭据已失效,需要重新登录", "Credentials expired, please sign in again")
         case .missingCredentials(let detail): return detail
-        case .parse(let detail): return "响应解析失败: \(detail)"
-        case .oauth(let detail): return "OAuth 失败: \(detail)"
+        case .parse(let detail): return L("响应解析失败: ", "Failed to parse response: ") + detail
+        case .oauth(let detail): return L("OAuth 失败: ", "OAuth failed: ") + detail
         }
     }
 }

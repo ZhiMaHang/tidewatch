@@ -53,20 +53,20 @@ enum CodexProvider {
         switch account.source {
         case .codexAuthFile(let path):
             guard let data = readCLIAuthData(path: path) else {
-                throw QuotaError.missingCredentials("读不到 \(path)(文件和钥匙串里都没有)")
+                throw QuotaError.missingCredentials(L("读不到 \(path)(文件和钥匙串里都没有)", "Cannot read \(path) (not in the file or the keychain)"))
             }
             guard let file = try? JSONDecoder().decode(CodexAuthFile.self, from: data), let tokens = file.tokens else {
-                throw QuotaError.missingCredentials("auth.json 里没有 tokens(可能是纯 API key 模式)")
+                throw QuotaError.missingCredentials(L("auth.json 里没有 tokens(可能是纯 API key 模式)", "No tokens in auth.json (may be API-key-only mode)"))
             }
             return tokens
         case .managed:
             guard let data = KeychainStore.load(key: account.id.uuidString),
                   let tokens = try? JSONDecoder().decode(CodexTokens.self, from: data) else {
-                throw QuotaError.missingCredentials("钥匙串里找不到该账号的 token,请重新登录")
+                throw QuotaError.missingCredentials(L("钥匙串里找不到该账号的 token,请重新登录", "No token for this account in the keychain, please sign in again"))
             }
             return tokens
         case .claudeCLI:
-            throw QuotaError.missingCredentials("账号来源类型不匹配")
+            throw QuotaError.missingCredentials(L("账号来源类型不匹配", "Account source type mismatch"))
         }
     }
 
@@ -74,7 +74,7 @@ enum CodexProvider {
         switch account.source {
         case .managed:
             guard let data = try? JSONEncoder().encode(tokens), KeychainStore.save(data, key: account.id.uuidString) else {
-                throw QuotaError.missingCredentials("写入 QuotaBar 钥匙串失败")
+                throw QuotaError.missingCredentials(L("写入 QuotaBar 钥匙串失败", "Failed to write to the QuotaBar keychain"))
             }
         case .codexAuthFile(let path):
             // refresh token 会轮转,必须写回 CLI 的存储,否则会把用户的 Codex CLI 登录搞失效。
@@ -94,13 +94,13 @@ enum CodexProvider {
             if let keychainItem {
                 // 写回读到的同一个钥匙串条目,不能凭 hash 猜(读写不对称会把 CLI 的 token 搞丢)
                 guard KeychainStore.writeForeign(service: cliKeychainService, account: keychainItem.account, data: out) else {
-                    throw QuotaError.missingCredentials("写回钥匙串 \(cliKeychainService) 失败")
+                    throw QuotaError.missingCredentials(L("写回钥匙串 \(cliKeychainService) 失败", "Failed to write back to keychain \(cliKeychainService)"))
                 }
             } else {
                 try SecureFile.write(out, toPath: path)
             }
         case .claudeCLI:
-            throw QuotaError.missingCredentials("账号来源类型不匹配")
+            throw QuotaError.missingCredentials(L("账号来源类型不匹配", "Account source type mismatch"))
         }
     }
 
@@ -112,7 +112,7 @@ enum CodexProvider {
             if let data = try? JSONEncoder().encode(tokens) {
                 KeychainStore.save(data, key: "rescue-\(account.id.uuidString)")
             }
-            throw QuotaError.oauth("token 已刷新但写回原存储失败(新 token 已暂存到钥匙串 rescue 条目):\(error.localizedDescription)")
+            throw QuotaError.oauth(L("token 已刷新但写回原存储失败(新 token 已暂存到钥匙串 rescue 条目):", "Token refreshed but writing back to the original store failed (the new token was stashed in a keychain rescue entry): ") + error.localizedDescription)
         }
     }
 
@@ -145,7 +145,7 @@ enum CodexProvider {
         }
         let data = try await HTTP.getJSON(url: usageURL, headers: headers)
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            throw QuotaError.parse("usage 响应不是 JSON 对象")
+            throw QuotaError.parse(L("usage 响应不是 JSON 对象", "usage response is not a JSON object"))
         }
         var windows: [UsageWindow] = []
         if let rateLimit = obj["rate_limit"] as? [String: Any] {
@@ -153,19 +153,19 @@ enum CodexProvider {
         }
         if let extra = obj["additional_rate_limits"] as? [[String: Any]] {
             for item in extra {
-                let name = item["limit_name"] as? String ?? "附加额度"
+                let name = item["limit_name"] as? String ?? L("附加额度", "Extra limit")
                 if let rl = item["rate_limit"] as? [String: Any] {
                     windows.append(contentsOf: parseRateLimit(rl, namePrefix: name))
                 }
             }
         }
         guard !windows.isEmpty else {
-            throw QuotaError.parse("usage 响应里没有识别到额度窗口")
+            throw QuotaError.parse(L("usage 响应里没有识别到额度窗口", "No usage windows found in the response"))
         }
         var credits: String?
         if let c = obj["credits"] as? [String: Any] {
             if let unlimited = c["unlimited"] as? Bool, unlimited {
-                credits = "不限量"
+                credits = L("不限量", "Unlimited")
             } else if let balance = c["balance"] as? String, balance != "0" {
                 credits = balance
             }
@@ -181,7 +181,7 @@ enum CodexProvider {
 
     static func parseRateLimit(_ rl: [String: Any], namePrefix: String?) -> [UsageWindow] {
         var out: [UsageWindow] = []
-        for (slot, fallback) in [("primary_window", "主窗口"), ("secondary_window", "次窗口")] {
+        for (slot, fallback) in [("primary_window", L("主窗口", "Primary window")), ("secondary_window", L("次窗口", "Secondary window"))] {
             guard let w = rl[slot] as? [String: Any] else { continue }
             let used = (w["used_percent"] as? Double) ?? (w["used_percent"] as? Int).map(Double.init) ?? 0
             var title = fallback
@@ -207,10 +207,10 @@ enum CodexProvider {
 
     static func windowTitle(seconds: Double) -> String {
         let hours = seconds / 3600
-        if hours <= 6 { return "5 小时窗口" }
-        if hours <= 25 { return "24 小时窗口" }
-        if hours <= 24 * 8 { return "本周" }
-        return "\(Int(hours / 24)) 天窗口"
+        if hours <= 6 { return L("5 小时窗口", "5-hour window") }
+        if hours <= 25 { return L("24 小时窗口", "24-hour window") }
+        if hours <= 24 * 8 { return L("本周", "This week") }
+        return L("\(Int(hours / 24)) 天窗口", "\(Int(hours / 24))-day window")
     }
 
     // MARK: Token 刷新
@@ -230,7 +230,7 @@ enum CodexProvider {
         }
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let access = obj["access_token"] as? String else {
-            throw QuotaError.oauth("刷新响应缺少 access_token")
+            throw QuotaError.oauth(L("刷新响应缺少 access_token", "Refresh response is missing access_token"))
         }
         var next = tokens
         next.access_token = access

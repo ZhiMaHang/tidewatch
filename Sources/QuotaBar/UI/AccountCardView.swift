@@ -10,7 +10,7 @@ struct AccountCardView: View {
             HStack(spacing: 6) {
                 providerBadge
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(account.label.isEmpty ? "未命名账号" : account.label)
+                    Text(account.label.isEmpty ? L("未命名账号", "Unnamed") : account.label)
                         .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
                     HStack(spacing: 4) {
@@ -28,14 +28,14 @@ struct AccountCardView: View {
                 }
                 Spacer()
                 Menu {
-                    Button("重命名…") {
+                    Button(L("重命名…", "Rename…")) {
                         if let name = RenamePrompt.run(current: account.label) {
                             store.relabel(account, to: name)
                         }
                     }
-                    Button("刷新") { Task { await store.refresh(account, force: true) } }
+                    Button(L("刷新", "Refresh")) { Task { await store.refresh(account, force: true) } }
                     Divider()
-                    Button("移除账号", role: .destructive) { store.removeAccount(account) }
+                    Button(L("移除账号", "Remove account"), role: .destructive) { store.removeAccount(account) }
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 11))
@@ -48,14 +48,14 @@ struct AccountCardView: View {
             case .idle, .loading:
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text("加载中…").font(.caption).foregroundStyle(.secondary)
+                    Text(L("加载中…", "Loading…")).font(.caption).foregroundStyle(.secondary)
                 }
             case .loaded(let snapshot):
                 ForEach(snapshot.windows, id: \.key) { window in
                     WindowGaugeView(window: window)
                 }
                 if let credits = snapshot.creditsBalance {
-                    Text("额外 Credits: \(credits)")
+                    Text(L("额外 Credits: ", "Extra credits: ") + credits)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -82,11 +82,11 @@ struct AccountCardView: View {
 
     private var sourceDescription: String {
         switch account.source {
-        case .managed: return "应用内登录"
+        case .managed: return L("应用内登录", "In-app login")
         case .codexAuthFile(let path):
-            return path == CodexProvider.defaultAuthPath ? "本机 Codex CLI" : (path as NSString).abbreviatingWithTildeInPath
+            return path == CodexProvider.defaultAuthPath ? L("本机 Codex CLI", "Local Codex CLI") : (path as NSString).abbreviatingWithTildeInPath
         case .claudeCLI(let path):
-            return path == nil ? "本机 Claude Code" : ((path! as NSString).abbreviatingWithTildeInPath)
+            return path == nil ? L("本机 Claude Code", "Local Claude Code") : ((path! as NSString).abbreviatingWithTildeInPath)
         }
     }
 }
@@ -109,7 +109,7 @@ struct WindowGaugeView: View {
                 .tint(color)
                 .controlSize(.small)
             if let resetsAt = window.resetsAt {
-                Text("重置于 \(resetText(resetsAt))")
+                Text(L("重置于 ", "Resets ") + resetText(resetsAt))
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
             }
@@ -126,11 +126,11 @@ struct WindowGaugeView: View {
 
     private func resetText(_ date: Date) -> String {
         let remain = date.timeIntervalSinceNow
-        if remain <= 0 { return "已重置" }
+        if remain <= 0 { return L("已重置", "now") }
         let hours = Int(remain) / 3600
         let minutes = (Int(remain) % 3600) / 60
-        if hours >= 48 { return "\(hours / 24) 天\(hours % 24) 小时后" }
-        if hours > 0 { return "\(hours) 小时 \(minutes) 分后" }
-        return "\(minutes) 分钟后"
+        if hours >= 48 { return L("\(hours / 24) 天\(hours % 24) 小时后", "in \(hours / 24)d \(hours % 24)h") }
+        if hours > 0 { return L("\(hours) 小时 \(minutes) 分后", "in \(hours)h \(minutes)m") }
+        return L("\(minutes) 分钟后", "in \(minutes)m")
     }
 }

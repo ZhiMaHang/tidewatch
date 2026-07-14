@@ -91,7 +91,7 @@ final class UsageStore {
                 updateLabelIfNeeded(account, email: snapshot.email ?? tokens.id_token.flatMap(CodexProvider.email(fromIDToken:)), plan: snapshot.planType)
             }
         } catch QuotaError.unauthorized {
-            states[account.id] = .needsReauth("凭据已失效,请重新登录")
+            states[account.id] = .needsReauth(L("凭据已失效,请重新登录", "Credentials expired, please sign in again"))
         } catch {
             states[account.id] = .error(error.localizedDescription)
         }
@@ -100,7 +100,8 @@ final class UsageStore {
     private func updateLabelIfNeeded(_ account: Account, email: String?, plan: String?) {
         guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
         var changed = false
-        if let email, accounts[idx].label.isEmpty || accounts[idx].label.hasPrefix("未命名") {
+        // 只在名称还空着时用邮箱回填;用户手动改过的名字不覆盖
+        if let email, accounts[idx].label.isEmpty {
             accounts[idx].label = email
             changed = true
         }

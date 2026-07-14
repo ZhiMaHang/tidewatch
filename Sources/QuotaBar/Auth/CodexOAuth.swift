@@ -34,7 +34,7 @@ enum CodexOAuth {
         ])
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let access = obj["access_token"] as? String else {
-            throw QuotaError.oauth("换取 token 失败")
+            throw QuotaError.oauth(L("换取 token 失败", "Failed to exchange the token"))
         }
         let idToken = obj["id_token"] as? String
         return CodexTokens(

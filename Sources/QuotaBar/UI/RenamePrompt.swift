@@ -8,14 +8,14 @@ enum RenamePrompt {
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()
-        alert.messageText = "重命名账号"
-        alert.informativeText = "设置这个账号在 QuotaBar 里显示的名称"
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L("重命名账号", "Rename account")
+        alert.informativeText = L("设置这个账号在 QuotaBar 里显示的名称", "Set the name shown for this account in QuotaBar")
+        alert.addButton(withTitle: L("保存", "Save"))
+        alert.addButton(withTitle: L("取消", "Cancel"))
 
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         field.stringValue = current
-        field.placeholderString = "账号名称"
+        field.placeholderString = L("账号名称", "Account name")
         field.lineBreakMode = .byTruncatingTail
         alert.accessoryView = field
         alert.window.initialFirstResponder = field

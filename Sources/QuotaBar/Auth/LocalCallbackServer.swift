@@ -51,21 +51,24 @@ final class LocalCallbackServer: @unchecked Sendable {
                             comps.queryItems?.forEach { query[$0.name] = $0.value }
                             // state 必须存在且匹配,缺失一律拒绝
                             guard query["state"] == expectedState else {
-                                Self.respond(conn, status: "400 Bad Request", body: "state 校验失败,请回到 QuotaBar 重试")
+                                Self.respond(conn, status: "400 Bad Request", body: L("state 校验失败,请回到 QuotaBar 重试", "State check failed, please retry from QuotaBar"))
                                 return
                             }
+                            let okTitle = L("登录成功", "Signed in")
+                            let okBody = L("可以关闭此页面,回到 QuotaBar。", "You can close this page and return to QuotaBar.")
                             Self.respond(conn, status: "200 OK",
-                                         body: "<html><body style='font-family:sans-serif;text-align:center;padding-top:80px'><h2>登录成功</h2><p>可以关闭此页面,回到 QuotaBar。</p></body></html>")
+                                         body: "<html><body style='font-family:sans-serif;text-align:center;padding-top:80px'><h2>\(okTitle)</h2><p>\(okBody)</p></body></html>")
                             finish(.success(query))
                         }
                     }
                     listener.stateUpdateHandler = { state in
                         switch state {
                         case .failed(let error):
-                            finish(.failure(QuotaError.oauth("本地回调端口 \(self.port) 启动失败: \(error)(可能被 Codex CLI 占用,稍后再试)")))
+                            finish(.failure(QuotaError.oauth(L("本地回调端口 \(self.port) 启动失败: \(error)(可能被 Codex CLI 占用,稍后再试)",
+                                                               "Local callback port \(self.port) failed to start: \(error) (may be in use by the Codex CLI, try again later)"))))
                         case .cancelled:
                             // 超时/用户取消触发 stop() 时,由这里兜底恢复 continuation,避免任务组永远排不空
-                            finish(.failure(QuotaError.oauth("登录已取消")))
+                            finish(.failure(QuotaError.oauth(L("登录已取消", "Login cancelled"))))
                         default:
                             break
                         }
@@ -75,11 +78,11 @@ final class LocalCallbackServer: @unchecked Sendable {
             }
             group.addTask {
                 try await Task.sleep(for: .seconds(timeout))
-                throw QuotaError.oauth("等待浏览器授权超时")
+                throw QuotaError.oauth(L("等待浏览器授权超时", "Timed out waiting for browser authorization"))
             }
             defer { self.stop() }
             guard let first = try await group.next() else {
-                throw QuotaError.oauth("回调服务器异常退出")
+                throw QuotaError.oauth(L("回调服务器异常退出", "Callback server exited unexpectedly"))
             }
             group.cancelAll()
             return first

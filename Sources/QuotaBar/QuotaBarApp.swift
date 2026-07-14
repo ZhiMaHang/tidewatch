@@ -29,7 +29,7 @@ struct QuotaBarApp: App {
 
         // 「添加账号」独立开一个真窗口。MenuBarExtra 的面板是 nonactivating panel,
         // 在它上面弹 sheet 时 TextField 拿不到键盘焦点(光标进不去),必须用能成为 key window 的普通窗口。
-        Window("添加账号", id: AddAccountHost.windowID) {
+        Window(L("添加账号", "Add account"), id: AddAccountHost.windowID) {
             AddAccountHost()
                 .environment(store)
         }
@@ -69,15 +69,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 func runHeadlessCheck() async {
     let store = UsageStore()
     let accounts = store.accounts
-    print("QuotaBar 自检:共 \(accounts.count) 个账号")
+    print(L("QuotaBar 自检:共 \(accounts.count) 个账号", "QuotaBar check: \(accounts.count) account(s)"))
     if accounts.isEmpty {
-        print("(尚未添加账号。先启动 App 添加,或直接测试本机 Codex CLI:--check-codex-cli)")
+        print(L("(尚未添加账号。先启动 App 添加,或直接测试本机 Codex CLI:--check-codex-cli)",
+                "(No accounts yet. Launch the app to add one, or probe the local Codex CLI: --check-codex-cli)"))
     }
     for account in accounts {
         await checkOne(account)
     }
     if CommandLine.arguments.contains("--check-codex-cli") || accounts.isEmpty {
-        let probe = Account(id: UUID(), provider: .codex, label: "本机 Codex CLI(探测)", planType: nil,
+        let probe = Account(id: UUID(), provider: .codex, label: L("本机 Codex CLI(探测)", "Local Codex CLI (probe)"), planType: nil,
                             source: .codexAuthFile(path: CodexProvider.defaultAuthPath), addedAt: Date())
         if FileManager.default.fileExists(atPath: CodexProvider.defaultAuthPath) {
             await checkOne(probe)
@@ -96,14 +97,14 @@ private func checkOne(_ account: Account) async {
         case .codex:
             (snapshot, _) = try await CodexProvider.fetchUsage(for: account)
         }
-        if let plan = snapshot.planType { print("  套餐: \(plan)") }
-        if let email = snapshot.email { print("  邮箱: \(email)") }
+        if let plan = snapshot.planType { print("  " + L("套餐: ", "Plan: ") + plan) }
+        if let email = snapshot.email { print("  " + L("邮箱: ", "Email: ") + email) }
         for w in snapshot.windows {
-            let reset = w.resetsAt.map { " (重置于 \($0.formatted()))" } ?? ""
+            let reset = w.resetsAt.map { " (" + L("重置于 ", "resets ") + "\($0.formatted()))" } ?? ""
             print("  \(w.title): \(Int(w.usedPercent))%\(reset)")
         }
         if let credits = snapshot.creditsBalance { print("  Credits: \(credits)") }
     } catch {
-        print("  失败: \(error.localizedDescription)")
+        print("  " + L("失败: ", "Failed: ") + error.localizedDescription)
     }
 }

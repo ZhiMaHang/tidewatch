@@ -38,19 +38,19 @@ enum ClaudeProvider {
         switch account.source {
         case .managed:
             guard let data = KeychainStore.load(key: account.id.uuidString) else {
-                throw QuotaError.missingCredentials("钥匙串里找不到该账号的 token,请重新登录")
+                throw QuotaError.missingCredentials(L("钥匙串里找不到该账号的 token,请重新登录", "No token for this account in the keychain, please sign in again"))
             }
             guard let creds = try? JSONDecoder().decode(ClaudeCredentials.self, from: data) else {
-                throw QuotaError.missingCredentials("token 数据损坏,请重新登录")
+                throw QuotaError.missingCredentials(L("token 数据损坏,请重新登录", "Token data is corrupted, please sign in again"))
             }
             return creds
         case .claudeCLI(let path):
             if let path {
                 guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
-                    throw QuotaError.missingCredentials("读不到 \(path)")
+                    throw QuotaError.missingCredentials(L("读不到 ", "Cannot read ") + path)
                 }
                 guard let creds = decodeClaudeAiOauth(data) else {
-                    throw QuotaError.missingCredentials("\(path) 里没有 claudeAiOauth")
+                    throw QuotaError.missingCredentials(L("\(path) 里没有 claudeAiOauth", "No claudeAiOauth in \(path)"))
                 }
                 return creds
             }
@@ -61,9 +61,10 @@ enum ClaudeProvider {
             if let fd = try? Data(contentsOf: URL(fileURLWithPath: defaultCredentialsFile)), let creds = decodeClaudeAiOauth(fd) {
                 return creds
             }
-            throw QuotaError.missingCredentials("本机没有 Claude Code CLI 的主账号凭据(桌面版登录只有 MCP 子凭据)。请在终端 claude /login 后重试,或改用应用内登录")
+            throw QuotaError.missingCredentials(L("本机没有 Claude Code CLI 的主账号凭据(桌面版登录只有 MCP 子凭据)。请在终端 claude /login 后重试,或改用应用内登录",
+                                                  "No primary Claude Code CLI credentials found (a desktop login only leaves MCP sub-credentials). Run `claude /login` in a terminal and retry, or use in-app login."))
         case .codexAuthFile:
-            throw QuotaError.missingCredentials("账号来源类型不匹配")
+            throw QuotaError.missingCredentials(L("账号来源类型不匹配", "Account source type mismatch"))
         }
     }
 
@@ -78,7 +79,7 @@ enum ClaudeProvider {
         switch account.source {
         case .managed:
             guard let data = try? JSONEncoder().encode(creds), KeychainStore.save(data, key: account.id.uuidString) else {
-                throw QuotaError.missingCredentials("写入 QuotaBar 钥匙串失败")
+                throw QuotaError.missingCredentials(L("写入 QuotaBar 钥匙串失败", "Failed to write to the QuotaBar keychain"))
             }
         case .claudeCLI(let path):
             // 写回 CLI 的存储,保持 CLI 侧 token 同步(refresh token 会轮转);
@@ -100,7 +101,7 @@ enum ClaudeProvider {
             var obj = (existingRaw.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
             if filePath == nil && obj.isEmpty {
                 // 钥匙串条目解析不出来就绝不重建,否则会抹掉 mcpOAuth 等兄弟键
-                throw QuotaError.missingCredentials("钥匙串条目内容异常,拒绝写回以免损坏 Claude Code 凭据")
+                throw QuotaError.missingCredentials(L("钥匙串条目内容异常,拒绝写回以免损坏 Claude Code 凭据", "Keychain item content is abnormal; refusing to write back to avoid corrupting Claude Code credentials"))
             }
             var oauthObj = (obj["claudeAiOauth"] as? [String: Any]) ?? [:]
             oauthObj["accessToken"] = creds.accessToken
@@ -115,11 +116,11 @@ enum ClaudeProvider {
                 try SecureFile.write(out, toPath: filePath)
             } else {
                 guard KeychainStore.writeForeign(service: cliKeychainService, account: keychainAccount, data: out) else {
-                    throw QuotaError.missingCredentials("写回钥匙串 \(cliKeychainService) 失败")
+                    throw QuotaError.missingCredentials(L("写回钥匙串 \(cliKeychainService) 失败", "Failed to write back to keychain \(cliKeychainService)"))
                 }
             }
         case .codexAuthFile:
-            throw QuotaError.missingCredentials("账号来源类型不匹配")
+            throw QuotaError.missingCredentials(L("账号来源类型不匹配", "Account source type mismatch"))
         }
     }
 
@@ -131,7 +132,7 @@ enum ClaudeProvider {
             if let data = try? JSONEncoder().encode(creds) {
                 KeychainStore.save(data, key: "rescue-\(account.id.uuidString)")
             }
-            throw QuotaError.oauth("token 已刷新但写回原存储失败(新 token 已暂存到钥匙串 rescue 条目):\(error.localizedDescription)")
+            throw QuotaError.oauth(L("token 已刷新但写回原存储失败(新 token 已暂存到钥匙串 rescue 条目):", "Token refreshed but writing back to the original store failed (the new token was stashed in a keychain rescue entry): ") + error.localizedDescription)
         }
     }
 
@@ -164,27 +165,29 @@ enum ClaudeProvider {
             "User-Agent": userAgent,
         ])
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            throw QuotaError.parse("usage 响应不是 JSON 对象")
+            throw QuotaError.parse(L("usage 响应不是 JSON 对象", "usage response is not a JSON object"))
         }
         let windows = parseWindows(obj)
         guard !windows.isEmpty else {
-            throw QuotaError.parse("usage 响应里没有识别到额度窗口: \(String(String(data: data, encoding: .utf8)?.prefix(160) ?? ""))")
+            throw QuotaError.parse(L("usage 响应里没有识别到额度窗口: ", "No usage windows found in the response: ") + String(String(data: data, encoding: .utf8)?.prefix(160) ?? ""))
         }
         return UsageSnapshot(windows: windows, planType: nil, email: nil, creditsBalance: nil, fetchedAt: Date())
     }
 
     static let knownWindowOrder = ["five_hour", "seven_day", "seven_day_sonnet", "seven_day_opus",
                                    "seven_day_oauth_apps", "seven_day_routines", "cowork", "extra_usage"]
-    static let windowTitles: [String: String] = [
-        "five_hour": "5 小时窗口",
-        "seven_day": "本周(全部模型)",
-        "seven_day_sonnet": "本周(Sonnet)",
-        "seven_day_opus": "本周(Opus)",
-        "seven_day_oauth_apps": "本周(OAuth 应用)",
-        "seven_day_routines": "本周(Routines)",
-        "cowork": "本周(Routines)",
-        "extra_usage": "额外用量",
-    ]
+    static var windowTitles: [String: String] {
+        [
+            "five_hour": L("5 小时窗口", "5-hour window"),
+            "seven_day": L("本周(全部模型)", "This week (all models)"),
+            "seven_day_sonnet": L("本周(Sonnet)", "This week (Sonnet)"),
+            "seven_day_opus": L("本周(Opus)", "This week (Opus)"),
+            "seven_day_oauth_apps": L("本周(OAuth 应用)", "This week (OAuth apps)"),
+            "seven_day_routines": L("本周(Routines)", "This week (Routines)"),
+            "cowork": L("本周(Routines)", "This week (Routines)"),
+            "extra_usage": L("额外用量", "Extra usage"),
+        ]
+    }
 
     static func parseWindows(_ obj: [String: Any]) -> [UsageWindow] {
         var result: [UsageWindow] = []
@@ -240,7 +243,7 @@ enum ClaudeProvider {
         }
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let access = obj["access_token"] as? String else {
-            throw QuotaError.oauth("刷新响应缺少 access_token")
+            throw QuotaError.oauth(L("刷新响应缺少 access_token", "Refresh response is missing access_token"))
         }
         var next = creds
         next.accessToken = access
