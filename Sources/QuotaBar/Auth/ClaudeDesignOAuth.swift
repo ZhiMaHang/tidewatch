@@ -3,7 +3,9 @@ import Foundation
 /// Claude Design 的应用内登录:PKCE + 浏览器授权 + 粘贴授权码。
 /// 与主 Claude 登录同款 paste-code 流,但独立 client / scope / host(platform.claude.com)。
 enum ClaudeDesignOAuth {
-    static let authorizeBase = "https://platform.claude.com/oauth/authorize"
+    // 授权走 claude.ai 消费端登录(你平时登 Claude 的地方),不走 platform/console 计费站。
+    // redirect / token 保持 platform(design client 注册的回调与令牌端点,刷新已验证可用)。
+    static let authorizeBase = "https://claude.ai/oauth/authorize"
     static let redirectURI = "https://platform.claude.com/oauth/code/callback"
     static let tokenURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
     static let scopes = "user:design:read user:design:write"
