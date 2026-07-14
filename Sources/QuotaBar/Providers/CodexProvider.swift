@@ -37,11 +37,16 @@ enum CodexProvider {
         return "cli|" + String(hex.prefix(16))
     }
 
+    /// keyring 模式下的钥匙串条目(带实际命中的 account,写回时必须写同一条目)
+    static func keychainAuthItem(path: String) -> (data: Data, account: String)? {
+        KeychainStore.readForeignItem(service: cliKeychainService, account: keychainKey(forAuthPath: path))
+            ?? KeychainStore.readForeignItem(service: cliKeychainService)
+    }
+
     static func readCLIAuthData(path: String) -> Data? {
         if let data = try? Data(contentsOf: URL(fileURLWithPath: path)) { return data }
         // 新版 Codex CLI 的 keyring 模式:auth.json 被删,凭据在钥匙串 "Codex Auth"
-        return KeychainStore.readForeign(service: cliKeychainService, account: keychainKey(forAuthPath: path))
-            ?? KeychainStore.readForeign(service: cliKeychainService)
+        return keychainAuthItem(path: path)?.data
     }
 
     static func loadTokens(for account: Account) throws -> CodexTokens {
@@ -65,18 +70,18 @@ enum CodexProvider {
         }
     }
 
-    static func persist(_ tokens: CodexTokens, for account: Account) {
+    static func persist(_ tokens: CodexTokens, for account: Account) throws {
         switch account.source {
         case .managed:
-            if let data = try? JSONEncoder().encode(tokens) {
-                KeychainStore.save(data, key: account.id.uuidString)
+            guard let data = try? JSONEncoder().encode(tokens), KeychainStore.save(data, key: account.id.uuidString) else {
+                throw QuotaError.missingCredentials("写入 QuotaBar 钥匙串失败")
             }
         case .codexAuthFile(let path):
             // refresh token 会轮转,必须写回 CLI 的存储,否则会把用户的 Codex CLI 登录搞失效。
             // 用原始 dict 读改写,保留 codex-rs 可能依赖的未知字段(agent_identity 等)
-            let url = URL(fileURLWithPath: path)
             let fileExists = FileManager.default.fileExists(atPath: path)
-            let raw = readCLIAuthData(path: path)
+            let keychainItem = fileExists ? nil : keychainAuthItem(path: path)
+            let raw = fileExists ? (try? Data(contentsOf: URL(fileURLWithPath: path))) : keychainItem?.data
             var obj = (raw.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? ["auth_mode": "chatgpt"]
             var tokensObj = (obj["tokens"] as? [String: Any]) ?? [:]
             tokensObj["access_token"] = tokens.access_token
@@ -85,30 +90,48 @@ enum CodexProvider {
             if let v = tokens.refresh_token { tokensObj["refresh_token"] = v }
             obj["tokens"] = tokensObj
             obj["last_refresh"] = ISO8601DateFormatter.flexible.string(from: Date())
-            guard let out = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) else { return }
-            if fileExists {
-                try? out.write(to: url, options: .atomic)
-                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+            let out = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
+            if let keychainItem {
+                // 写回读到的同一个钥匙串条目,不能凭 hash 猜(读写不对称会把 CLI 的 token 搞丢)
+                guard KeychainStore.writeForeign(service: cliKeychainService, account: keychainItem.account, data: out) else {
+                    throw QuotaError.missingCredentials("写回钥匙串 \(cliKeychainService) 失败")
+                }
             } else {
-                KeychainStore.writeForeign(service: cliKeychainService, account: keychainKey(forAuthPath: path), data: out)
+                try SecureFile.write(out, toPath: path)
             }
         case .claudeCLI:
-            break
+            throw QuotaError.missingCredentials("账号来源类型不匹配")
+        }
+    }
+
+    /// 刷新后的写回失败时,把新 token 暂存到 QuotaBar 自己的钥匙串,避免轮转后的 refresh token 彻底丢失
+    static func persistOrRescue(_ tokens: CodexTokens, for account: Account) throws {
+        do {
+            try persist(tokens, for: account)
+        } catch {
+            if let data = try? JSONEncoder().encode(tokens) {
+                KeychainStore.save(data, key: "rescue-\(account.id.uuidString)")
+            }
+            throw QuotaError.oauth("token 已刷新但写回原存储失败(新 token 已暂存到钥匙串 rescue 条目):\(error.localizedDescription)")
         }
     }
 
     // MARK: 额度
 
     static func fetchUsage(for account: Account) async throws -> (UsageSnapshot, CodexTokens) {
-        var tokens = try loadTokens(for: account)
-        do {
-            let snapshot = try await fetchUsage(tokens: tokens)
-            return (snapshot, tokens)
-        } catch QuotaError.unauthorized {
-            tokens = try await refresh(tokens)
-            persist(tokens, for: account)
-            let snapshot = try await fetchUsage(tokens: tokens)
-            return (snapshot, tokens)
+        // 按凭据存储串行化:refresh token 单次有效,同一存储绝不能并发刷新;
+        // 锁内才读 token,排队者会拿到前一次刷新后的新 token,不会重放旧的
+        try await KeyedLocks.shared.run(credentialLockKey(account)) {
+            var tokens = try loadTokens(for: account)
+            do {
+                let snapshot = try await fetchUsage(tokens: tokens)
+                return (snapshot, tokens)
+            } catch QuotaError.unauthorized {
+                tokens = try await refresh(tokens)
+                try persistOrRescue(tokens, for: account)
+                let snapshot = try await fetchUsage(tokens: tokens)
+                return (snapshot, tokens)
+            }
         }
     }
 

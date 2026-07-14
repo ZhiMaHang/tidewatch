@@ -30,15 +30,19 @@ struct QuotaBarApp: App {
 
     @ViewBuilder
     private var menuBarLabel: some View {
-        let text = store.menuBarText
-        if text.isEmpty {
-            Image(systemName: "gauge.with.needle")
-        } else {
-            HStack(spacing: 3) {
+        // label 在应用启动时就常驻菜单栏,onAppear 挂这里才能不点开面板也开始拉取
+        Group {
+            let text = store.menuBarText
+            if text.isEmpty {
                 Image(systemName: "gauge.with.needle")
-                Text(text)
+            } else {
+                HStack(spacing: 3) {
+                    Image(systemName: "gauge.with.needle")
+                    Text(text)
+                }
             }
         }
+        .onAppear { store.start() }
     }
 }
 

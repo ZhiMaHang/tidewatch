@@ -120,7 +120,10 @@ struct AddAccountView: View {
                let email = oauthAccount["emailAddress"] as? String {
                 final.label = email
             }
-            store.addAccount(final)
+            guard store.addAccount(final) else {
+                errorText = "本机 Claude Code 凭据已经添加过了"
+                return
+            }
             onDone()
         } catch {
             errorText = error.localizedDescription
@@ -174,7 +177,10 @@ struct AddAccountView: View {
             let tokens = try CodexProvider.loadTokens(for: account)
             var final = account
             final.label = tokens.id_token.flatMap(CodexProvider.email(fromIDToken:)) ?? "本机 Codex CLI"
-            store.addAccount(final)
+            guard store.addAccount(final) else {
+                errorText = "这个 auth.json 已经添加过了"
+                return
+            }
             onDone()
         } catch {
             errorText = error.localizedDescription

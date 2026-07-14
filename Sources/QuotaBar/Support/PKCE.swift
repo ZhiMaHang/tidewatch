@@ -15,7 +15,11 @@ struct PKCE {
 
     private static func randomURLSafe(_ count: Int) -> String {
         var bytes = [UInt8](repeating: 0, count: count)
-        _ = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
+        if SecRandomCopyBytes(kSecRandomDefault, count, &bytes) != errSecSuccess {
+            // 极少见,但绝不能让 verifier/state 变成全零
+            var rng = SystemRandomNumberGenerator()
+            for i in bytes.indices { bytes[i] = UInt8.random(in: .min ... .max, using: &rng) }
+        }
         return Data(bytes).base64URLEncoded()
     }
 }

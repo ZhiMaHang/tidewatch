@@ -8,10 +8,15 @@ final class UsageStore {
     var states: [UUID: AccountState] = [:]
     var lastRefreshAt: Date?
     var refreshIntervalMinutes: Int {
-        didSet { UserDefaults.standard.set(refreshIntervalMinutes, forKey: "refreshIntervalMinutes") }
+        didSet {
+            guard refreshIntervalMinutes != oldValue else { return }
+            UserDefaults.standard.set(refreshIntervalMinutes, forKey: "refreshIntervalMinutes")
+            restartLoop()
+        }
     }
 
     private var refreshLoop: Task<Void, Never>?
+    private var inFlight: [UUID: Task<Void, Never>] = [:]
 
     init() {
         let stored = UserDefaults.standard.integer(forKey: "refreshIntervalMinutes")
@@ -19,33 +24,57 @@ final class UsageStore {
         accounts = AccountsRepository.load()
     }
 
-    func start() {
+    func start(immediate: Bool = true) {
         guard refreshLoop == nil else { return }
         refreshLoop = Task { [weak self] in
-            await self?.refreshAll()
+            if immediate { await self?.refreshAll() }
             while !Task.isCancelled {
-                let minutes = await MainActor.run { self?.refreshIntervalMinutes ?? 5 }
+                let minutes = self?.refreshIntervalMinutes ?? 5
                 try? await Task.sleep(for: .seconds(Double(minutes) * 60))
+                guard !Task.isCancelled else { break }
                 await self?.refreshAll()
             }
         }
     }
 
+    private func restartLoop() {
+        guard refreshLoop != nil else { return }
+        refreshLoop?.cancel()
+        refreshLoop = nil
+        start(immediate: false)
+    }
+
     // MARK: 刷新
 
-    func refreshAll() async {
+    func refreshAll(force: Bool = false) async {
         let list = accounts
         await withTaskGroup(of: Void.self) { group in
             for account in list {
                 group.addTask { [weak self] in
-                    await self?.refresh(account)
+                    await self?.refresh(account, force: force)
                 }
             }
         }
         lastRefreshAt = Date()
     }
 
-    func refresh(_ account: Account) async {
+    /// force=false 时跳过已标记需重登的账号(避免每轮空刷 invalid_grant);
+    /// 同一账号只允许一个进行中的刷新,重复触发直接等已有任务
+    func refresh(_ account: Account, force: Bool = false) async {
+        if let existing = inFlight[account.id] {
+            await existing.value
+            return
+        }
+        if !force, case .needsReauth = states[account.id] ?? .idle {
+            return
+        }
+        let task = Task { await self.performRefresh(account) }
+        inFlight[account.id] = task
+        await task.value
+        inFlight[account.id] = nil
+    }
+
+    private func performRefresh(_ account: Account) async {
         if states[account.id]?.snapshot == nil {
             states[account.id] = .loading
         }
@@ -82,10 +111,17 @@ final class UsageStore {
 
     // MARK: 账号管理
 
-    func addAccount(_ account: Account) {
+    /// 返回 false 表示同来源账号已存在(managed 账号各有独立 token,不算重复)
+    @discardableResult
+    func addAccount(_ account: Account) -> Bool {
+        if account.source != .managed,
+           accounts.contains(where: { $0.provider == account.provider && $0.source == account.source }) {
+            return false
+        }
         accounts.append(account)
         AccountsRepository.save(accounts)
-        Task { await refresh(account) }
+        Task { await refresh(account, force: true) }
+        return true
     }
 
     func removeAccount(_ account: Account) {

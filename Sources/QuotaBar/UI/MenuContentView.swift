@@ -36,19 +36,22 @@ struct MenuContentView: View {
             Text("QuotaBar")
                 .font(.headline)
             Spacer()
-            Button {
-                Task {
-                    isRefreshing = true
-                    await store.refreshAll()
-                    isRefreshing = false
+            if isRefreshing {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Button {
+                    Task {
+                        isRefreshing = true
+                        await store.refreshAll(force: true)
+                        isRefreshing = false
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
                 }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                    .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                .buttonStyle(.borderless)
+                .help("立即刷新")
             }
-            .buttonStyle(.borderless)
-            .help("立即刷新")
 
             Menu {
                 Button("添加 Claude 账号…") { addSheet = .claude }

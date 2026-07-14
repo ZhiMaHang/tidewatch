@@ -28,7 +28,7 @@ struct AccountCardView: View {
                 }
                 Spacer()
                 Menu {
-                    Button("刷新") { Task { await store.refresh(account) } }
+                    Button("刷新") { Task { await store.refresh(account, force: true) } }
                     Divider()
                     Button("移除账号", role: .destructive) { store.removeAccount(account) }
                 } label: {

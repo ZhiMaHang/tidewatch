@@ -74,28 +74,34 @@ enum ClaudeProvider {
         return try? JSONDecoder().decode(ClaudeCredentials.self, from: oauthData)
     }
 
-    static func persist(_ creds: ClaudeCredentials, for account: Account) {
+    static func persist(_ creds: ClaudeCredentials, for account: Account) throws {
         switch account.source {
         case .managed:
-            if let data = try? JSONEncoder().encode(creds) {
-                KeychainStore.save(data, key: account.id.uuidString)
+            guard let data = try? JSONEncoder().encode(creds), KeychainStore.save(data, key: account.id.uuidString) else {
+                throw QuotaError.missingCredentials("写入 QuotaBar 钥匙串失败")
             }
         case .claudeCLI(let path):
             // 写回 CLI 的存储,保持 CLI 侧 token 同步(refresh token 会轮转);
-            // dict 合并,只覆盖我们管理的键,保留其它键(mcpOAuth、未知字段)
+            // dict 合并,只覆盖我们管理的键,保留其它键(mcpOAuth、designOauth、未知字段)
             let filePath: String?
             let existingRaw: Data?
+            var keychainAccount: String?
             if let path {
                 filePath = path
                 existingRaw = try? Data(contentsOf: URL(fileURLWithPath: path))
-            } else if let kc = KeychainStore.readForeign(service: cliKeychainService), decodeClaudeAiOauth(kc) != nil {
+            } else if let item = KeychainStore.readForeignItem(service: cliKeychainService), decodeClaudeAiOauth(item.data) != nil {
                 filePath = nil
-                existingRaw = kc
+                existingRaw = item.data
+                keychainAccount = item.account
             } else {
                 filePath = defaultCredentialsFile
                 existingRaw = try? Data(contentsOf: URL(fileURLWithPath: defaultCredentialsFile))
             }
             var obj = (existingRaw.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+            if filePath == nil && obj.isEmpty {
+                // 钥匙串条目解析不出来就绝不重建,否则会抹掉 mcpOAuth 等兄弟键
+                throw QuotaError.missingCredentials("钥匙串条目内容异常,拒绝写回以免损坏 Claude Code 凭据")
+            }
             var oauthObj = (obj["claudeAiOauth"] as? [String: Any]) ?? [:]
             oauthObj["accessToken"] = creds.accessToken
             if let v = creds.refreshToken { oauthObj["refreshToken"] = v }
@@ -104,34 +110,50 @@ enum ClaudeProvider {
             if let v = creds.subscriptionType { oauthObj["subscriptionType"] = v }
             if let v = creds.rateLimitTier { oauthObj["rateLimitTier"] = v }
             obj["claudeAiOauth"] = oauthObj
-            guard let out = try? JSONSerialization.data(withJSONObject: obj) else { return }
+            let out = try JSONSerialization.data(withJSONObject: obj)
             if let filePath {
-                try? out.write(to: URL(fileURLWithPath: filePath), options: .atomic)
-                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: filePath)
+                try SecureFile.write(out, toPath: filePath)
             } else {
-                KeychainStore.writeForeign(service: cliKeychainService, data: out)
+                guard KeychainStore.writeForeign(service: cliKeychainService, account: keychainAccount, data: out) else {
+                    throw QuotaError.missingCredentials("写回钥匙串 \(cliKeychainService) 失败")
+                }
             }
         case .codexAuthFile:
-            break
+            throw QuotaError.missingCredentials("账号来源类型不匹配")
+        }
+    }
+
+    /// 刷新后的写回失败时,把新 token 暂存到 QuotaBar 自己的钥匙串,避免轮转后的 refresh token 彻底丢失
+    static func persistOrRescue(_ creds: ClaudeCredentials, for account: Account) throws {
+        do {
+            try persist(creds, for: account)
+        } catch {
+            if let data = try? JSONEncoder().encode(creds) {
+                KeychainStore.save(data, key: "rescue-\(account.id.uuidString)")
+            }
+            throw QuotaError.oauth("token 已刷新但写回原存储失败(新 token 已暂存到钥匙串 rescue 条目):\(error.localizedDescription)")
         }
     }
 
     // MARK: 额度
 
     static func fetchUsage(for account: Account) async throws -> (UsageSnapshot, ClaudeCredentials) {
-        var creds = try loadCredentials(for: account)
-        if creds.isExpired {
-            creds = try await refresh(creds)
-            persist(creds, for: account)
-        }
-        do {
-            let snapshot = try await fetchUsage(accessToken: creds.accessToken)
-            return (snapshot, creds)
-        } catch QuotaError.unauthorized {
-            creds = try await refresh(creds)
-            persist(creds, for: account)
-            let snapshot = try await fetchUsage(accessToken: creds.accessToken)
-            return (snapshot, creds)
+        // 按凭据存储串行化 + 锁内重读,同 CodexProvider(refresh token 轮转,禁止并发刷新)
+        try await KeyedLocks.shared.run(credentialLockKey(account)) {
+            var creds = try loadCredentials(for: account)
+            if creds.isExpired {
+                creds = try await refresh(creds)
+                try persistOrRescue(creds, for: account)
+            }
+            do {
+                let snapshot = try await fetchUsage(accessToken: creds.accessToken)
+                return (snapshot, creds)
+            } catch QuotaError.unauthorized {
+                creds = try await refresh(creds)
+                try persistOrRescue(creds, for: account)
+                let snapshot = try await fetchUsage(accessToken: creds.accessToken)
+                return (snapshot, creds)
+            }
         }
     }
 
@@ -174,7 +196,7 @@ enum ClaudeProvider {
             seen.insert(key)
             var resetsAt: Date?
             if let s = dict["resets_at"] as? String {
-                resetsAt = ISO8601DateFormatter.flexible.date(from: s)
+                resetsAt = parseISODate(s) // 带不带小数秒都要能解析
             } else if let t = dict["resets_at"] as? Double {
                 resetsAt = Date(timeIntervalSince1970: t)
             }

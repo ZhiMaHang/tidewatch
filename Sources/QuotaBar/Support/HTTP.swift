@@ -4,7 +4,8 @@ enum HTTP {
     static let session: URLSession = {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForRequest = 20
-        cfg.timeoutIntervalForResource = 30
+        // 要容得下 token 端点偶发的 40-60s 慢响应,不能低于单请求超时
+        cfg.timeoutIntervalForResource = 120
         return URLSession(configuration: cfg)
     }()
 
@@ -20,7 +21,8 @@ enum HTTP {
         headers.forEach { req.setValue($1, forHTTPHeaderField: $0) }
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, http) = try await send(req)
-        if http.statusCode == 401 || http.statusCode == 403 { throw QuotaError.unauthorized }
+        // 只有 401 才代表凭据失效;403 可能是 WAF/权限/套餐问题,绝不能触发 refresh token 轮转
+        if http.statusCode == 401 { throw QuotaError.unauthorized }
         guard (200..<300).contains(http.statusCode) else {
             throw QuotaError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
         }
@@ -39,7 +41,8 @@ enum HTTP {
         let body = fields.map { "\(enc($0.key))=\(enc($0.value))" }.sorted().joined(separator: "&")
         req.httpBody = body.data(using: .utf8)
         let (data, http) = try await send(req)
-        if http.statusCode == 401 || http.statusCode == 403 { throw QuotaError.unauthorized }
+        // 只有 401 才代表凭据失效;403 可能是 WAF/权限/套餐问题,绝不能触发 refresh token 轮转
+        if http.statusCode == 401 { throw QuotaError.unauthorized }
         guard (200..<300).contains(http.statusCode) else {
             throw QuotaError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
         }
@@ -56,7 +59,8 @@ enum HTTP {
         headers.forEach { req.setValue($1, forHTTPHeaderField: $0) }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, http) = try await send(req)
-        if http.statusCode == 401 || http.statusCode == 403 { throw QuotaError.unauthorized }
+        // 只有 401 才代表凭据失效;403 可能是 WAF/权限/套餐问题,绝不能触发 refresh token 轮转
+        if http.statusCode == 401 { throw QuotaError.unauthorized }
         guard (200..<300).contains(http.statusCode) else {
             throw QuotaError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
         }
