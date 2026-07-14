@@ -21,7 +21,6 @@ struct AccountCardView: View {
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 1)
                                 .background(.quaternary, in: Capsule())
-                                .padding(.leading, -4) // 抵消胶囊左内边距,让徽章文字左缘与名称对齐
                         }
                         Text(sourceDescription)
                             .font(.system(size: 9))
