@@ -22,6 +22,13 @@ struct AddAccountHost: View {
                     .onAppear { dismiss() }
             }
         }
+        .background(WindowConfigurator { window in
+            // 降回普通层级,别一直浮在最前面;当窗口不再是焦点时也不隐藏
+            window.level = .normal
+            window.hidesOnDeactivate = false
+            window.collectionBehavior.remove(.canJoinAllSpaces)
+            window.isMovableByWindowBackground = false
+        })
         .onAppear { NSApp.activate(ignoringOtherApps: true) }
     }
 }
