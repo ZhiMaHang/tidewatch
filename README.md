@@ -42,3 +42,7 @@ open /Applications/QuotaBar.app
 - Codex:`GET https://chatgpt.com/backend-api/wham/usage`(OAuth Bearer + `chatgpt-account-id`);token 刷新走 `auth.openai.com/oauth/token`(刷新 token 单次有效会轮转,应用会写回原存储)
 
 两者都是各家 CLI 自用的私有接口,仅用于读取你自己账号的用量。
+
+## License
+
+MIT © 2026 智码航,详见 [LICENSE](LICENSE)。
