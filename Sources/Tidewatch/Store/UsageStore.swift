@@ -21,7 +21,26 @@ final class UsageStore {
         }
     }
 
+    /// 有更新且未被用户忽略时非 nil,驱动面板顶部那条克制的「有新版」横幅
+    var updateInfo: UpdateInfo?
+    /// 匿名版本检查开关(隐私红线:可关)。默认开;关闭立即撤掉横幅并停掉 ping
+    var updateCheckEnabled: Bool {
+        didSet {
+            guard updateCheckEnabled != oldValue else { return }
+            UserDefaults.standard.set(updateCheckEnabled, forKey: Keys.updateCheckEnabled)
+            if updateCheckEnabled { startUpdateChecks() } else { stopUpdateChecks() }
+        }
+    }
+
+    private enum Keys {
+        static let updateCheckEnabled = "updateCheckEnabled"
+        static let skippedUpdateVersion = "skippedUpdateVersion"
+    }
+    /// 每天查一次:够做「周活版本分布」度量,又不会 phone-home 刷屏
+    private let updateCheckInterval: TimeInterval = 24 * 60 * 60
+
     private var refreshLoop: Task<Void, Never>?
+    private var updateLoop: Task<Void, Never>?
     private var inFlight: [UUID: Task<Void, Never>] = [:]
     /// 是否有 design 凭据的缓存(nil=未判定),避免每轮刷新做钥匙串读
     private var designAvailable: [UUID: Bool] = [:]
@@ -29,6 +48,8 @@ final class UsageStore {
     init() {
         let stored = UserDefaults.standard.integer(forKey: "refreshIntervalMinutes")
         refreshIntervalMinutes = stored >= 3 ? stored : 5
+        // 默认开:老用户/首启时该 key 不存在(nil)也视为开。didSet 在 init 内不触发,不会提前启动 loop。
+        updateCheckEnabled = UserDefaults.standard.object(forKey: Keys.updateCheckEnabled) as? Bool ?? true
         accounts = AccountsRepository.load()
         if let data = UserDefaults.standard.data(forKey: "designFirstSeen"),
            let d = try? JSONDecoder().decode([String: Date].self, from: data) {
@@ -58,6 +79,8 @@ final class UsageStore {
                 await self?.refreshAll()
             }
         }
+        // 版本检查独立于额度刷新回路(不同频率、失败互不影响)
+        startUpdateChecks()
     }
 
     private func restartLoop() {
@@ -65,6 +88,44 @@ final class UsageStore {
         refreshLoop?.cancel()
         refreshLoop = nil
         start(immediate: false)
+    }
+
+    // MARK: 匿名版本检查(仅版本号)
+
+    /// 启动即查一次,之后每天一次;全程静默,只有查到更严格新版且未被忽略时才亮横幅。
+    func startUpdateChecks() {
+        guard updateCheckEnabled, updateLoop == nil else { return }
+        updateLoop = Task { [weak self] in
+            await self?.checkForUpdate()
+            while !Task.isCancelled {
+                let interval = self?.updateCheckInterval ?? 86_400
+                try? await Task.sleep(for: .seconds(interval))
+                guard !Task.isCancelled else { break }
+                await self?.checkForUpdate()
+            }
+        }
+    }
+
+    private func stopUpdateChecks() {
+        updateLoop?.cancel()
+        updateLoop = nil
+        updateInfo = nil // 关掉即撤横幅
+    }
+
+    /// 拉一次 latest.json;忽略过的版本不再打扰(但 GET 照发,计数不受影响)。
+    func checkForUpdate() async {
+        guard updateCheckEnabled else { return }
+        let info = await UpdateChecker.fetchIfNewer()
+        let skipped = UserDefaults.standard.string(forKey: Keys.skippedUpdateVersion)
+        updateInfo = (info?.latest == skipped) ? nil : info
+    }
+
+    /// 「忽略此版本」:记住这个版本号,之后不再为它亮横幅(有更新的版本仍会提示)。
+    func skipUpdate() {
+        if let v = updateInfo?.latest {
+            UserDefaults.standard.set(v, forKey: Keys.skippedUpdateVersion)
+        }
+        updateInfo = nil
     }
 
     // MARK: 刷新

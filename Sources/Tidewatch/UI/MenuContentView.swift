@@ -12,6 +12,7 @@ struct MenuContentView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
+            updateBanner
             if store.accounts.isEmpty {
                 emptyState
             } else {
@@ -90,6 +91,9 @@ struct MenuContentView: View {
                     Text(L("30 分钟", "30 min")).tag(30)
                 }
                 Divider()
+                // 匿名版本检查:只发当前版本号,可随时关(隐私红线要求默认开、可关)
+                Toggle(L("检查更新", "Check for updates"), isOn: Bindable(store).updateCheckEnabled)
+                Divider()
                 Button(L("退出 Tidewatch", "Quit Tidewatch")) { NSApplication.shared.terminate(nil) }
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -100,6 +104,47 @@ struct MenuContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    /// 克制的「有新版」提示:不弹窗、不打断,只在面板顶部亮一条,可下载、可忽略此版本。
+    @ViewBuilder
+    private var updateBanner: some View {
+        if let info = store.updateInfo {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(.tint)
+                    Text(L("有新版本 ", "New version ") + info.latest)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                    Spacer(minLength: 4)
+                    if let url = info.url {
+                        Link(L("下载", "Download"), destination: url)
+                            .font(.caption)
+                    }
+                    Button {
+                        store.skipUpdate()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help(L("忽略此版本", "Skip this version"))
+                }
+                if let notes = info.localizedNotes {
+                    Text(notes)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.accentColor.opacity(0.10))
+            Divider()
+        }
     }
 
     private var emptyState: some View {

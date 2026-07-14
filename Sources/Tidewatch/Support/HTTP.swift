@@ -9,10 +9,41 @@ enum HTTP {
         return URLSession(configuration: cfg)
     }()
 
+    static let maxRetries = 3
+
+    /// 瞬时网络/TLS 错误自动重试(最多 maxRetries 次 + 递增退避)。
+    /// 只重试"请求没到服务器/没拿到响应"这类错误(如 TLS 握手失败、连不上、超时),
+    /// 这类重试对 GET 和 token 刷新都安全;拿到 HTTP 响应(含 4xx/5xx)不在此重试。
     static func send(_ req: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let (data, resp) = try await session.data(for: req)
-        guard let http = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        return (data, http)
+        var attempt = 0
+        while true {
+            do {
+                let (data, resp) = try await session.data(for: req)
+                guard let http = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+                return (data, http)
+            } catch let error as URLError where attempt < maxRetries && isTransient(error) {
+                attempt += 1
+                try? await Task.sleep(for: .milliseconds(400 * attempt)) // 0.4s / 0.8s / 1.2s
+            }
+        }
+    }
+
+    /// 是否属于可安全重试的瞬时传输错误
+    private static func isTransient(_ error: URLError) -> Bool {
+        switch error.code {
+        case .secureConnectionFailed,      // A TLS error caused the secure connection to fail
+             .networkConnectionLost,
+             .timedOut,
+             .cannotConnectToHost,
+             .cannotFindHost,
+             .dnsLookupFailed,
+             .notConnectedToInternet,
+             .badServerResponse,
+             .resourceUnavailable:
+            return true
+        default:
+            return false
+        }
     }
 
     static func getJSON(url: URL, headers: [String: String]) async throws -> Data {
