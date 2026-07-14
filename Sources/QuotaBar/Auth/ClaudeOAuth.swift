@@ -26,7 +26,8 @@ enum ClaudeOAuth {
         let trimmed = pastedCode.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw QuotaError.oauth("授权码为空") }
         let parts = trimmed.split(separator: "#", maxSplits: 1).map(String.init)
-        let code = parts[0]
+        // 回调页展示 "code#state";code 里若混入 &xxx 参数也一并清掉
+        let code = parts[0].components(separatedBy: "&")[0]
         let state = parts.count > 1 ? parts[1] : pkce.state
 
         let data = try await HTTP.postJSON(url: ClaudeProvider.tokenURL, body: [

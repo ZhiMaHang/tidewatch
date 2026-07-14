@@ -55,7 +55,8 @@ struct MenuContentView: View {
                 Button("添加 Codex 账号…") { addSheet = .codex }
                 Divider()
                 Picker("刷新间隔", selection: Bindable(store).refreshIntervalMinutes) {
-                    Text("1 分钟").tag(1)
+                    // Claude 端点社区实测安全轮询 >= 180s
+                    Text("3 分钟").tag(3)
                     Text("5 分钟").tag(5)
                     Text("15 分钟").tag(15)
                     Text("30 分钟").tag(30)

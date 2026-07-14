@@ -15,7 +15,7 @@ final class UsageStore {
 
     init() {
         let stored = UserDefaults.standard.integer(forKey: "refreshIntervalMinutes")
-        refreshIntervalMinutes = stored > 0 ? stored : 5
+        refreshIntervalMinutes = stored >= 3 ? stored : 5
         accounts = AccountsRepository.load()
     }
 

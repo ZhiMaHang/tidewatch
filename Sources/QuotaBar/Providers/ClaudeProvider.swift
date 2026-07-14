@@ -8,6 +8,7 @@ struct ClaudeCredentials: Codable {
     var expiresAt: Double?
     var scopes: [String]?
     var subscriptionType: String?
+    var rateLimitTier: String?
 
     var isExpired: Bool {
         guard let expiresAt else { return false }
@@ -18,12 +19,18 @@ struct ClaudeCredentials: Codable {
 enum ClaudeProvider {
     static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     static let profileURL = URL(string: "https://api.anthropic.com/api/oauth/profile")!
+    /// 授权码兑换(grll/claude-code-login 验证:JSON 体)
     static let tokenURL = URL(string: "https://console.anthropic.com/v1/oauth/token")!
+    /// token 刷新(CodexBar 验证:form-urlencoded 体,platform 是新 host)
+    static let refreshURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
     static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     static let betaHeader = "oauth-2025-04-20"
-    /// Anthropic 2026 年起对消费级 OAuth 有服务端客户端校验,需要 Claude Code 风格的 UA
-    static let userAgent = "claude-cli/2.1.0 (external, cli)"
+    /// 不带 claude-code 风格 UA 会被服务端限流(社区实测),格式为 claude-code/<version>
+    static let userAgent = "claude-code/2.1.52"
     static let cliKeychainService = "Claude Code-credentials"
+    static var defaultCredentialsFile: String {
+        (NSHomeDirectory() as NSString).appendingPathComponent(".claude/.credentials.json")
+    }
 
     // MARK: 凭据读写
 
@@ -38,28 +45,33 @@ enum ClaudeProvider {
             }
             return creds
         case .claudeCLI(let path):
-            let raw: Data
             if let path {
                 guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
                     throw QuotaError.missingCredentials("读不到 \(path)")
                 }
-                raw = data
-            } else {
-                guard let data = KeychainStore.readForeign(service: cliKeychainService) else {
-                    throw QuotaError.missingCredentials("钥匙串里没有 Claude Code CLI 凭据(需要先在终端 claude /login)")
+                guard let creds = decodeClaudeAiOauth(data) else {
+                    throw QuotaError.missingCredentials("\(path) 里没有 claudeAiOauth")
                 }
-                raw = data
+                return creds
             }
-            guard let obj = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any],
-                  let oauthObj = obj["claudeAiOauth"],
-                  let oauthData = try? JSONSerialization.data(withJSONObject: oauthObj),
-                  let creds = try? JSONDecoder().decode(ClaudeCredentials.self, from: oauthData) else {
-                throw QuotaError.missingCredentials("凭据里没有 claudeAiOauth(可能是桌面版登录,请改用应用内登录)")
+            // 钥匙串优先;桌面版登录时条目只有 mcpOAuth 没有主 token,回退到 .credentials.json
+            if let kc = KeychainStore.readForeign(service: cliKeychainService), let creds = decodeClaudeAiOauth(kc) {
+                return creds
             }
-            return creds
+            if let fd = try? Data(contentsOf: URL(fileURLWithPath: defaultCredentialsFile)), let creds = decodeClaudeAiOauth(fd) {
+                return creds
+            }
+            throw QuotaError.missingCredentials("本机没有 Claude Code CLI 的主账号凭据(桌面版登录只有 MCP 子凭据)。请在终端 claude /login 后重试,或改用应用内登录")
         case .codexAuthFile:
             throw QuotaError.missingCredentials("账号来源类型不匹配")
         }
+    }
+
+    static func decodeClaudeAiOauth(_ raw: Data) -> ClaudeCredentials? {
+        guard let obj = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any],
+              let oauthObj = obj["claudeAiOauth"],
+              let oauthData = try? JSONSerialization.data(withJSONObject: oauthObj) else { return nil }
+        return try? JSONDecoder().decode(ClaudeCredentials.self, from: oauthData)
     }
 
     static func persist(_ creds: ClaudeCredentials, for account: Account) {
@@ -69,23 +81,33 @@ enum ClaudeProvider {
                 KeychainStore.save(data, key: account.id.uuidString)
             }
         case .claudeCLI(let path):
-            // 写回 CLI 的存储,保持 CLI 侧 token 同步(refresh token 会轮转)
-            let container: [String: Any]
+            // 写回 CLI 的存储,保持 CLI 侧 token 同步(refresh token 会轮转);
+            // dict 合并,只覆盖我们管理的键,保留其它键(mcpOAuth、未知字段)
+            let filePath: String?
             let existingRaw: Data?
             if let path {
+                filePath = path
                 existingRaw = try? Data(contentsOf: URL(fileURLWithPath: path))
+            } else if let kc = KeychainStore.readForeign(service: cliKeychainService), decodeClaudeAiOauth(kc) != nil {
+                filePath = nil
+                existingRaw = kc
             } else {
-                existingRaw = KeychainStore.readForeign(service: cliKeychainService)
+                filePath = defaultCredentialsFile
+                existingRaw = try? Data(contentsOf: URL(fileURLWithPath: defaultCredentialsFile))
             }
             var obj = (existingRaw.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
-            if let credsData = try? JSONEncoder().encode(creds),
-               let credsObj = try? JSONSerialization.jsonObject(with: credsData) {
-                obj["claudeAiOauth"] = credsObj
-            }
-            container = obj
-            guard let out = try? JSONSerialization.data(withJSONObject: container) else { return }
-            if let path {
-                try? out.write(to: URL(fileURLWithPath: path), options: .atomic)
+            var oauthObj = (obj["claudeAiOauth"] as? [String: Any]) ?? [:]
+            oauthObj["accessToken"] = creds.accessToken
+            if let v = creds.refreshToken { oauthObj["refreshToken"] = v }
+            if let v = creds.expiresAt { oauthObj["expiresAt"] = v }
+            if let v = creds.scopes { oauthObj["scopes"] = v }
+            if let v = creds.subscriptionType { oauthObj["subscriptionType"] = v }
+            if let v = creds.rateLimitTier { oauthObj["rateLimitTier"] = v }
+            obj["claudeAiOauth"] = oauthObj
+            guard let out = try? JSONSerialization.data(withJSONObject: obj) else { return }
+            if let filePath {
+                try? out.write(to: URL(fileURLWithPath: filePath), options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: filePath)
             } else {
                 KeychainStore.writeForeign(service: cliKeychainService, data: out)
             }
@@ -129,13 +151,17 @@ enum ClaudeProvider {
         return UsageSnapshot(windows: windows, planType: nil, email: nil, creditsBalance: nil, fetchedAt: Date())
     }
 
-    static let knownWindowOrder = ["five_hour", "seven_day", "seven_day_sonnet", "seven_day_opus", "seven_day_oauth_apps"]
+    static let knownWindowOrder = ["five_hour", "seven_day", "seven_day_sonnet", "seven_day_opus",
+                                   "seven_day_oauth_apps", "seven_day_routines", "cowork", "extra_usage"]
     static let windowTitles: [String: String] = [
         "five_hour": "5 小时窗口",
         "seven_day": "本周(全部模型)",
         "seven_day_sonnet": "本周(Sonnet)",
         "seven_day_opus": "本周(Opus)",
         "seven_day_oauth_apps": "本周(OAuth 应用)",
+        "seven_day_routines": "本周(Routines)",
+        "cowork": "本周(Routines)",
+        "extra_usage": "额外用量",
     ]
 
     static func parseWindows(_ obj: [String: Any]) -> [UsageWindow] {
@@ -182,11 +208,11 @@ enum ClaudeProvider {
         guard let refreshToken = creds.refreshToken else { throw QuotaError.unauthorized }
         let data: Data
         do {
-            data = try await HTTP.postJSON(url: tokenURL, body: [
+            data = try await HTTP.postForm(url: refreshURL, fields: [
                 "grant_type": "refresh_token",
                 "refresh_token": refreshToken,
                 "client_id": clientID,
-            ])
+            ], headers: ["User-Agent": userAgent])
         } catch QuotaError.http(let code, _) where code == 400 {
             throw QuotaError.unauthorized
         }

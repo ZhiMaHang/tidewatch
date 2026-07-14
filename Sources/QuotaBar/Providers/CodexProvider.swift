@@ -20,7 +20,7 @@ enum CodexProvider {
     static let usageURL = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
     static let tokenURL = URL(string: "https://auth.openai.com/oauth/token")!
     static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
-    static let userAgent = "codex_cli_rs"
+    static let userAgent = "QuotaBar/0.1.0"
     static var defaultAuthPath: String {
         (NSHomeDirectory() as NSString).appendingPathComponent(".codex/auth.json")
     }
@@ -117,8 +117,8 @@ enum CodexProvider {
             "Authorization": "Bearer \(tokens.access_token)",
             "User-Agent": userAgent,
         ]
-        if let accountID = tokens.account_id {
-            headers["chatgpt-account-id"] = accountID
+        if let accountID = tokens.account_id, !accountID.isEmpty {
+            headers["ChatGPT-Account-Id"] = accountID
         }
         let data = try await HTTP.getJSON(url: usageURL, headers: headers)
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
@@ -201,7 +201,6 @@ enum CodexProvider {
                 "client_id": clientID,
                 "grant_type": "refresh_token",
                 "refresh_token": refreshToken,
-                "scope": "openid profile email",
             ])
         } catch QuotaError.http(let code, _) where code == 400 {
             throw QuotaError.unauthorized

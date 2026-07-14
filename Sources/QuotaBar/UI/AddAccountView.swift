@@ -112,6 +112,14 @@ struct AddAccountView: View {
             let creds = try ClaudeProvider.loadCredentials(for: account)
             var final = account
             final.planType = creds.subscriptionType
+            // ~/.claude.json 的 oauthAccount 里有邮箱(非机密元数据)
+            let claudeJSON = (NSHomeDirectory() as NSString).appendingPathComponent(".claude.json")
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: claudeJSON)),
+               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+               let oauthAccount = obj["oauthAccount"] as? [String: Any],
+               let email = oauthAccount["emailAddress"] as? String {
+                final.label = email
+            }
             store.addAccount(final)
             onDone()
         } catch {
