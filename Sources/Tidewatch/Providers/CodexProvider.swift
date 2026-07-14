@@ -20,7 +20,8 @@ enum CodexProvider {
     static let usageURL = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
     static let tokenURL = URL(string: "https://auth.openai.com/oauth/token")!
     static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
-    static let userAgent = "Tidewatch/0.1.0"
+    // 版本号走单一事实源,避免多处漂移(值同 AppVersion.current;任意 UA 对 Codex 端点都可用)
+    static var userAgent: String { "Tidewatch/\(AppVersion.current)" }
     static var defaultAuthPath: String {
         (NSHomeDirectory() as NSString).appendingPathComponent(".codex/auth.json")
     }
