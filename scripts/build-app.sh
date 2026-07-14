@@ -1,27 +1,27 @@
 #!/bin/zsh
-# 构建 QuotaBar.app 到 dist/
+# 构建 Tidewatch.app 到 dist/
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 swift build -c release
 
-APP=dist/QuotaBar.app
+APP=dist/Tidewatch.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/QuotaBar "$APP/Contents/MacOS/QuotaBar"
+cp .build/release/QuotaBar "$APP/Contents/MacOS/Tidewatch"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>QuotaBar</string>
-    <key>CFBundleDisplayName</key><string>QuotaBar</string>
-    <key>CFBundleIdentifier</key><string>com.zhimahang.quotabar</string>
+    <key>CFBundleName</key><string>Tidewatch</string>
+    <key>CFBundleDisplayName</key><string>Tidewatch</string>
+    <key>CFBundleIdentifier</key><string>com.zhimahang.tidewatch</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleExecutable</key><string>QuotaBar</string>
+    <key>CFBundleExecutable</key><string>Tidewatch</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>

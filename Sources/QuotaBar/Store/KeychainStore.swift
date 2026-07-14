@@ -2,47 +2,47 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    static let service = "com.zhimahang.quotabar.credentials"
-    /// 旧服务名(改名前),启动时一次性迁移到新服务名,避免已添加账号的 token 变孤儿
-    static let legacyService = "com.quotabar.credentials"
+    static let service = "com.zhimahang.tidewatch.credentials"
+    /// 历次改名的旧服务名(新→旧顺序),启动时一次性迁移到当前服务名,避免已添加账号的 token 变孤儿
+    static let legacyServices = ["com.zhimahang.quotabar.credentials", "com.quotabar.credentials"]
 
-    /// 把旧服务名下的所有条目(账号 token、rescue 条目)搬到新服务名,然后删旧。
+    /// 把旧服务名下的所有条目(账号 token、rescue 条目)搬到当前服务名,然后删旧。
     /// 只有确实迁完(或本来就没有旧条目)才置标记;读取被拒/失败则下次启动重试,避免账号被永久丢弃。
     static func migrateLegacyServiceIfNeeded() {
-        let flag = "migratedTo_zhimahang_service"
+        let flag = "migratedTo_tidewatch_service"
         guard !UserDefaults.standard.bool(forKey: flag) else { return }
 
+        for legacy in legacyServices where !migrateOne(from: legacy) {
+            return // 某个旧服务读/写失败,不置标记,下次重试
+        }
+        UserDefaults.standard.set(true, forKey: flag)
+    }
+
+    /// 迁移单个旧服务;成功(含本来就没有条目)返回 true,读/写失败返回 false
+    private static func migrateOne(from legacy: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: legacyService,
+            kSecAttrService as String: legacy,
             kSecReturnData as String: true,
             kSecReturnAttributes as String: true,
             kSecMatchLimit as String: kSecMatchLimitAll,
         ]
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return true } // 没有旧条目
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else { return false }
 
-        if status == errSecItemNotFound {
-            UserDefaults.standard.set(true, forKey: flag) // 没有旧条目,标记完成
-            return
-        }
-        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
-            return // 读取被拒或异常:不置标记,下次启动重试
-        }
-
-        var allWritten = true
         for item in items {
             guard let account = item[kSecAttrAccount as String] as? String,
                   let data = item[kSecValueData as String] as? Data else { continue }
-            if !save(data, key: account) { allWritten = false }
+            // 当前服务已有该 account 就不覆盖(更新的迁移优先),否则搬过来
+            if load(key: account) == nil, !save(data, key: account) { return false }
         }
-        guard allWritten else { return } // 有条目没写成功,不删旧也不置标记
-
         SecItemDelete([
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: legacyService,
+            kSecAttrService as String: legacy,
         ] as CFDictionary)
-        UserDefaults.standard.set(true, forKey: flag)
+        return true
     }
 
     @discardableResult

@@ -18,7 +18,7 @@ final class MCPClient {
         _ = try? await rpc(method: "initialize", params: [
             "protocolVersion": "2025-06-18",
             "capabilities": [:],
-            "clientInfo": ["name": "QuotaBar", "version": "0.1"],
+            "clientInfo": ["name": "Tidewatch", "version": "0.1"],
         ])
         let obj = try await rpc(method: "tools/call", params: ["name": name, "arguments": arguments])
         if let err = obj["error"] as? [String: Any] {

@@ -52,7 +52,7 @@ struct MenuContentView: View {
 
     private var header: some View {
         HStack {
-            Text("QuotaBar")
+            Text("Tidewatch")
                 .font(.headline)
             Spacer()
             if isRefreshing {
@@ -90,7 +90,7 @@ struct MenuContentView: View {
                     Text(L("30 分钟", "30 min")).tag(30)
                 }
                 Divider()
-                Button(L("退出 QuotaBar", "Quit QuotaBar")) { NSApplication.shared.terminate(nil) }
+                Button(L("退出 Tidewatch", "Quit Tidewatch")) { NSApplication.shared.terminate(nil) }
             } label: {
                 Image(systemName: "ellipsis.circle")
             }

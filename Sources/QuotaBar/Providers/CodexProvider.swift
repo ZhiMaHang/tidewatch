@@ -20,7 +20,7 @@ enum CodexProvider {
     static let usageURL = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
     static let tokenURL = URL(string: "https://auth.openai.com/oauth/token")!
     static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
-    static let userAgent = "QuotaBar/0.1.0"
+    static let userAgent = "Tidewatch/0.1.0"
     static var defaultAuthPath: String {
         (NSHomeDirectory() as NSString).appendingPathComponent(".codex/auth.json")
     }
@@ -74,7 +74,7 @@ enum CodexProvider {
         switch account.source {
         case .managed:
             guard let data = try? JSONEncoder().encode(tokens), KeychainStore.save(data, key: account.id.uuidString) else {
-                throw QuotaError.missingCredentials(L("写入 QuotaBar 钥匙串失败", "Failed to write to the QuotaBar keychain"))
+                throw QuotaError.missingCredentials(L("写入 Tidewatch 钥匙串失败", "Failed to write to the Tidewatch keychain"))
             }
         case .codexAuthFile(let path):
             // refresh token 会轮转,必须写回 CLI 的存储,否则会把用户的 Codex CLI 登录搞失效。
@@ -104,7 +104,7 @@ enum CodexProvider {
         }
     }
 
-    /// 刷新后的写回失败时,把新 token 暂存到 QuotaBar 自己的钥匙串,避免轮转后的 refresh token 彻底丢失
+    /// 刷新后的写回失败时,把新 token 暂存到 Tidewatch 自己的钥匙串,避免轮转后的 refresh token 彻底丢失
     static func persistOrRescue(_ tokens: CodexTokens, for account: Account) throws {
         do {
             try persist(tokens, for: account)

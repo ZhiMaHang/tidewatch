@@ -2,16 +2,25 @@ import Foundation
 
 /// 账号元数据(非机密)落在 Application Support;token 走 Keychain。
 enum AccountsRepository {
-    static var directory: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("QuotaBar", isDirectory: true)
+    private static var appSupport: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     }
-
+    static var directory: URL { appSupport.appendingPathComponent("Tidewatch", isDirectory: true) }
     static var fileURL: URL { directory.appendingPathComponent("accounts.json") }
+    /// 改名前的旧目录(QuotaBar),启动首次加载时迁移过来
+    private static var legacyFileURL: URL { appSupport.appendingPathComponent("QuotaBar/accounts.json") }
 
     static func load() -> [Account] {
-        guard let data = try? Data(contentsOf: fileURL) else { return [] }
-        return (try? JSONDecoder.iso.decode([Account].self, from: data)) ?? []
+        if let data = try? Data(contentsOf: fileURL) {
+            return (try? JSONDecoder.iso.decode([Account].self, from: data)) ?? []
+        }
+        // 迁移:新目录还没有,就读旧 QuotaBar 目录并写到新目录
+        if let data = try? Data(contentsOf: legacyFileURL),
+           let accounts = try? JSONDecoder.iso.decode([Account].self, from: data) {
+            save(accounts)
+            return accounts
+        }
+        return []
     }
 
     static func save(_ accounts: [Account]) {

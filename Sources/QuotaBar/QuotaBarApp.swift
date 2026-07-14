@@ -9,11 +9,11 @@ enum Entry {
             await runHeadlessCheck()
             return
         }
-        QuotaBarApp.main()
+        TidewatchApp.main()
     }
 }
 
-struct QuotaBarApp: App {
+struct TidewatchApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var store = UsageStore()
 
@@ -69,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 func runHeadlessCheck() async {
     let store = UsageStore()
     let accounts = store.accounts
-    print(L("QuotaBar 自检:共 \(accounts.count) 个账号", "QuotaBar check: \(accounts.count) account(s)"))
+    print(L("Tidewatch 自检:共 \(accounts.count) 个账号", "Tidewatch check: \(accounts.count) account(s)"))
     if accounts.isEmpty {
         print(L("(尚未添加账号。先启动 App 添加,或直接测试本机 Codex CLI:--check-codex-cli)",
                 "(No accounts yet. Launch the app to add one, or probe the local Codex CLI: --check-codex-cli)"))

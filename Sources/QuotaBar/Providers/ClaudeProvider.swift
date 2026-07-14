@@ -79,7 +79,7 @@ enum ClaudeProvider {
         switch account.source {
         case .managed:
             guard let data = try? JSONEncoder().encode(creds), KeychainStore.save(data, key: account.id.uuidString) else {
-                throw QuotaError.missingCredentials(L("写入 QuotaBar 钥匙串失败", "Failed to write to the QuotaBar keychain"))
+                throw QuotaError.missingCredentials(L("写入 Tidewatch 钥匙串失败", "Failed to write to the Tidewatch keychain"))
             }
         case .claudeCLI(let path):
             // 写回 CLI 的存储,保持 CLI 侧 token 同步(refresh token 会轮转);
@@ -124,7 +124,7 @@ enum ClaudeProvider {
         }
     }
 
-    /// 刷新后的写回失败时,把新 token 暂存到 QuotaBar 自己的钥匙串,避免轮转后的 refresh token 彻底丢失
+    /// 刷新后的写回失败时,把新 token 暂存到 Tidewatch 自己的钥匙串,避免轮转后的 refresh token 彻底丢失
     static func persistOrRescue(_ creds: ClaudeCredentials, for account: Account) throws {
         do {
             try persist(creds, for: account)

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 「Claude Design 项目」独立窗口:按 Claude 账号分组列出项目(名称 + 首次发现时间 + 打开链接)。
-/// 时间是 QuotaBar 记录的"首次发现",因为接口不返回项目真实创建/修改时间。
+/// 时间是 Tidewatch 记录的"首次发现",因为接口不返回项目真实创建/修改时间。
 struct DesignProjectsWindow: View {
     static let windowID = "design-projects"
 
@@ -108,8 +108,8 @@ struct DesignProjectsWindow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Text(L("注:Claude Design 接口不返回项目时间,时间列为 QuotaBar 首次发现的时间。",
-                   "Note: the Claude Design API returns no project timestamps; the time shown is when QuotaBar first saw it."))
+            Text(L("注:Claude Design 接口不返回项目时间,时间列为 Tidewatch 首次发现的时间。",
+                   "Note: the Claude Design API returns no project timestamps; the time shown is when Tidewatch first saw it."))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)

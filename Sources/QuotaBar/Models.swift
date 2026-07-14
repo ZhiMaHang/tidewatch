@@ -17,13 +17,13 @@ enum Provider: String, Codable, CaseIterable, Identifiable {
 
 /// 账号凭据的来源。
 enum CredentialSource: Codable, Equatable {
-    /// 应用内 OAuth 登录,token 存在 QuotaBar 自己的钥匙串条目里
+    /// 应用内 OAuth 登录,token 存在 Tidewatch 自己的钥匙串条目里
     case managed
     /// 实时读取 Codex CLI 的 auth.json(支持多个 CODEX_HOME);刷新后写回
     case codexAuthFile(path: String)
     /// 实时读取 Claude Code CLI 的凭据:钥匙串 "Claude Code-credentials",或指定 credentials.json 路径
     case claudeCLI(credentialsFilePath: String?)
-    /// GLM(z.ai 海外版)API key,存在 QuotaBar 钥匙串,按账号 id 取
+    /// GLM(z.ai 海外版)API key,存在 Tidewatch 钥匙串,按账号 id 取
     case glmApiKey
 }
 

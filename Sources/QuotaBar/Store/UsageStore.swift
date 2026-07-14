@@ -8,7 +8,7 @@ final class UsageStore {
     var states: [UUID: AccountState] = [:]
     /// 每个 Claude 账号的 Claude Design 项目列表(有 design 登录才有)
     var designProjects: [UUID: [DesignProject]] = [:]
-    /// 项目 id → QuotaBar 首次发现该项目的时间(接口不返回真实时间,这是替代;持久化)
+    /// 项目 id → Tidewatch 首次发现该项目的时间(接口不返回真实时间,这是替代;持久化)
     var designFirstSeen: [String: Date] = [:]
     var lastRefreshAt: Date?
     /// 「添加账号」窗口当前要添加的提供方(nil = 窗口空置)。不持久化,仅驱动独立窗口

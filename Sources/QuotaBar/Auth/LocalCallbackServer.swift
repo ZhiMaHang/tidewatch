@@ -51,11 +51,11 @@ final class LocalCallbackServer: @unchecked Sendable {
                             comps.queryItems?.forEach { query[$0.name] = $0.value }
                             // state 必须存在且匹配,缺失一律拒绝
                             guard query["state"] == expectedState else {
-                                Self.respond(conn, status: "400 Bad Request", body: L("state 校验失败,请回到 QuotaBar 重试", "State check failed, please retry from QuotaBar"))
+                                Self.respond(conn, status: "400 Bad Request", body: L("state 校验失败,请回到 Tidewatch 重试", "State check failed, please retry from Tidewatch"))
                                 return
                             }
                             let okTitle = L("登录成功", "Signed in")
-                            let okBody = L("可以关闭此页面,回到 QuotaBar。", "You can close this page and return to QuotaBar.")
+                            let okBody = L("可以关闭此页面,回到 Tidewatch。", "You can close this page and return to Tidewatch.")
                             Self.respond(conn, status: "200 OK",
                                          body: "<html><body style='font-family:sans-serif;text-align:center;padding-top:80px'><h2>\(okTitle)</h2><p>\(okBody)</p></body></html>")
                             finish(.success(query))

@@ -97,7 +97,7 @@ enum DesignProvider {
         switch account.source {
         case .managed:
             guard let data = try? JSONEncoder().encode(creds), KeychainStore.save(data, key: keychainKey(account)) else {
-                throw QuotaError.missingCredentials(L("写入 QuotaBar 钥匙串失败", "Failed to write to the QuotaBar keychain"))
+                throw QuotaError.missingCredentials(L("写入 Tidewatch 钥匙串失败", "Failed to write to the Tidewatch keychain"))
             }
         case .claudeCLI(let path):
             // 把 designOauth 合并写回 Claude Code 的存储,保留 mcpOAuth/claudeAiOauth 等兄弟键

@@ -9,7 +9,7 @@ enum RenamePrompt {
 
         let alert = NSAlert()
         alert.messageText = L("重命名账号", "Rename account")
-        alert.informativeText = L("设置这个账号在 QuotaBar 里显示的名称", "Set the name shown for this account in QuotaBar")
+        alert.informativeText = L("设置这个账号在 Tidewatch 里显示的名称", "Set the name shown for this account in Tidewatch")
         alert.addButton(withTitle: L("保存", "Save"))
         alert.addButton(withTitle: L("取消", "Cancel"))
 
