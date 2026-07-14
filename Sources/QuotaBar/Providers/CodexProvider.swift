@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Codex CLI auth.json 的结构
 struct CodexAuthFile: Codable {
@@ -26,11 +27,28 @@ enum CodexProvider {
 
     // MARK: 凭据读写
 
+    static let cliKeychainService = "Codex Auth"
+
+    /// keyring 模式下的钥匙串 account key:"cli|" + sha256(规范化 CODEX_HOME 路径) 前 16 个十六进制字符
+    static func keychainKey(forAuthPath path: String) -> String {
+        let home = (path as NSString).deletingLastPathComponent
+        let canonical = URL(fileURLWithPath: home).resolvingSymlinksInPath().standardizedFileURL.path
+        let hex = SHA256.hash(data: Data(canonical.utf8)).map { String(format: "%02x", $0) }.joined()
+        return "cli|" + String(hex.prefix(16))
+    }
+
+    static func readCLIAuthData(path: String) -> Data? {
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: path)) { return data }
+        // 新版 Codex CLI 的 keyring 模式:auth.json 被删,凭据在钥匙串 "Codex Auth"
+        return KeychainStore.readForeign(service: cliKeychainService, account: keychainKey(forAuthPath: path))
+            ?? KeychainStore.readForeign(service: cliKeychainService)
+    }
+
     static func loadTokens(for account: Account) throws -> CodexTokens {
         switch account.source {
         case .codexAuthFile(let path):
-            guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
-                throw QuotaError.missingCredentials("读不到 \(path)")
+            guard let data = readCLIAuthData(path: path) else {
+                throw QuotaError.missingCredentials("读不到 \(path)(文件和钥匙串里都没有)")
             }
             guard let file = try? JSONDecoder().decode(CodexAuthFile.self, from: data), let tokens = file.tokens else {
                 throw QuotaError.missingCredentials("auth.json 里没有 tokens(可能是纯 API key 模式)")
@@ -54,15 +72,21 @@ enum CodexProvider {
                 KeychainStore.save(data, key: account.id.uuidString)
             }
         case .codexAuthFile(let path):
+            // refresh token 会轮转,必须写回 CLI 的存储,否则会把用户的 Codex CLI 登录搞失效
             let url = URL(fileURLWithPath: path)
-            var file = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(CodexAuthFile.self, from: $0) }
+            let fileExists = FileManager.default.fileExists(atPath: path)
+            var file = readCLIAuthData(path: path).flatMap { try? JSONDecoder().decode(CodexAuthFile.self, from: $0) }
                 ?? CodexAuthFile(OPENAI_API_KEY: nil, auth_mode: "chatgpt", last_refresh: nil, tokens: nil)
             file.tokens = tokens
             file.last_refresh = ISO8601DateFormatter.flexible.string(from: Date())
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            if let out = try? encoder.encode(file) {
+            guard let out = try? encoder.encode(file) else { return }
+            if fileExists {
                 try? out.write(to: url, options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+            } else {
+                KeychainStore.writeForeign(service: cliKeychainService, account: keychainKey(forAuthPath: path), data: out)
             }
         case .claudeCLI:
             break
@@ -166,6 +190,7 @@ enum CodexProvider {
 
     static func refresh(_ tokens: CodexTokens) async throws -> CodexTokens {
         guard let refreshToken = tokens.refresh_token else { throw QuotaError.unauthorized }
+        // codex-rs 的刷新请求是 JSON 体(授权码兑换才是 form-urlencoded)
         let data: Data
         do {
             data = try await HTTP.postJSON(url: tokenURL, body: [

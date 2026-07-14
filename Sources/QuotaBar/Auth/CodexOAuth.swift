@@ -19,12 +19,13 @@ enum CodexOAuth {
             URLQueryItem(name: "state", value: pkce.state),
             URLQueryItem(name: "id_token_add_organizations", value: "true"),
             URLQueryItem(name: "codex_cli_simplified_flow", value: "true"),
+            URLQueryItem(name: "originator", value: "codex_cli_rs"),
         ]
         return comps.url!
     }
 
     static func exchange(code: String, pkce: PKCE) async throws -> CodexTokens {
-        let data = try await HTTP.postJSON(url: CodexProvider.tokenURL, body: [
+        let data = try await HTTP.postForm(url: CodexProvider.tokenURL, fields: [
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": redirectURI,

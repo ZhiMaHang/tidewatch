@@ -21,6 +21,8 @@ enum ClaudeProvider {
     static let tokenURL = URL(string: "https://console.anthropic.com/v1/oauth/token")!
     static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     static let betaHeader = "oauth-2025-04-20"
+    /// Anthropic 2026 年起对消费级 OAuth 有服务端客户端校验,需要 Claude Code 风格的 UA
+    static let userAgent = "claude-cli/2.1.0 (external, cli)"
     static let cliKeychainService = "Claude Code-credentials"
 
     // MARK: 凭据读写
@@ -115,6 +117,7 @@ enum ClaudeProvider {
         let data = try await HTTP.getJSON(url: usageURL, headers: [
             "Authorization": "Bearer \(accessToken)",
             "anthropic-beta": betaHeader,
+            "User-Agent": userAgent,
         ])
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw QuotaError.parse("usage 响应不是 JSON 对象")
@@ -163,6 +166,7 @@ enum ClaudeProvider {
         let data = try await HTTP.getJSON(url: profileURL, headers: [
             "Authorization": "Bearer \(accessToken)",
             "anthropic-beta": betaHeader,
+            "User-Agent": userAgent,
         ])
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return (nil, nil) }
         let accountObj = obj["account"] as? [String: Any]

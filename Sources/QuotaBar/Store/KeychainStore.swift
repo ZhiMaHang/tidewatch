@@ -40,32 +40,34 @@ enum KeychainStore {
         SecItemDelete(query as CFDictionary)
     }
 
-    /// 读取其它应用的 generic password(如 Claude Code CLI 的凭据),系统会弹一次授权框
-    static func readForeign(service: String) -> Data? {
-        let query: [String: Any] = [
+    /// 读取其它应用的 generic password(如 Claude Code / Codex CLI 的凭据),系统会弹一次授权框
+    static func readForeign(service: String, account: String? = nil) -> Data? {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+        if let account { query[kSecAttrAccount as String] = account }
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess else { return nil }
         return result as? Data
     }
 
-    /// 写回其它应用的 generic password(刷新 Claude CLI token 后保持 CLI 可用)
-    static func writeForeign(service: String, data: Data) {
-        let query: [String: Any] = [
+    /// 写回其它应用的 generic password(刷新 CLI token 后保持 CLI 可用)
+    static func writeForeign(service: String, account: String? = nil, data: Data) {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
         ]
+        if let account { query[kSecAttrAccount as String] = account }
         let update: [String: Any] = [kSecValueData as String: data]
         let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
         if status == errSecItemNotFound {
             var attrs = query
             attrs[kSecValueData as String] = data
-            attrs[kSecAttrAccount as String] = NSUserName()
+            if account == nil { attrs[kSecAttrAccount as String] = NSUserName() }
             SecItemAdd(attrs as CFDictionary, nil)
         }
     }
