@@ -35,6 +35,20 @@ enum AppLanguage {
             return lang.hasPrefix("zh") ? .zh : .en
         }
     }
+
+    /// 界面语言对应的 Locale,用于日期/时间格式化。用固定 locale(而非系统 locale)
+    /// 让日期与界面文字语言始终一致——否则英文界面下 `Date.formatted` 仍会显示"年月日"。
+    static var locale: Locale {
+        current == .zh ? Locale(identifier: "zh_CN") : Locale(identifier: "en_US")
+    }
+}
+
+extension Date {
+    /// 跟随 App 界面语言(而非系统 locale)格式化日期/时间。
+    func localized(date: Date.FormatStyle.DateStyle = .abbreviated,
+                   time: Date.FormatStyle.TimeStyle = .omitted) -> String {
+        formatted(Date.FormatStyle(date: date, time: time).locale(AppLanguage.locale))
+    }
 }
 
 /// 就地二选一取本地化文案。co-located,避免 key 对不上。

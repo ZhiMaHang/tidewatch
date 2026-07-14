@@ -103,10 +103,10 @@ private func checkOne(_ account: Account) async {
         if let plan = snapshot.planType { print("  " + L("套餐: ", "Plan: ") + plan) }
         if let email = snapshot.email { print("  " + L("邮箱: ", "Email: ") + email) }
         if let end = snapshot.subscriptionEndsAt {
-            print("  " + L("订阅至: ", "Renews: ") + end.formatted(date: .abbreviated, time: .omitted))
+            print("  " + L("订阅至: ", "Renews: ") + end.localized(date: .abbreviated))
         }
         for w in snapshot.windows {
-            let reset = w.resetsAt.map { " (" + L("重置于 ", "resets ") + "\($0.formatted()))" } ?? ""
+            let reset = w.resetsAt.map { " (" + L("重置于 ", "resets ") + $0.localized(date: .abbreviated, time: .shortened) + ")" } ?? ""
             print("  \(w.title): \(Int(w.usedPercent))%\(reset)")
         }
         if let credits = snapshot.creditsBalance { print("  Credits: \(credits)") }

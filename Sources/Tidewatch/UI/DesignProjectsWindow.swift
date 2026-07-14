@@ -84,7 +84,7 @@ struct DesignProjectsWindow: View {
                     .buttonStyle(.plain)
                     Spacer(minLength: 12)
                     if let seen = store.designFirstSeen[project.id] {
-                        Text(L("首次发现 ", "First seen ") + seen.formatted(date: .abbreviated, time: .shortened))
+                        Text(L("首次发现 ", "First seen ") + seen.localized(date: .abbreviated, time: .shortened))
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                             .fixedSize()

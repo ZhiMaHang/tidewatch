@@ -28,7 +28,7 @@ struct AccountCardView: View {
                     }
                     if let end = account.manualSubscriptionEndsAt ?? state.snapshot?.subscriptionEndsAt {
                         Label {
-                            Text(L("订阅至 ", "Renews ") + end.formatted(date: .abbreviated, time: .omitted))
+                            Text(L("订阅至 ", "Renews ") + end.localized(date: .abbreviated))
                         } icon: {
                             Image(systemName: "calendar")
                         }

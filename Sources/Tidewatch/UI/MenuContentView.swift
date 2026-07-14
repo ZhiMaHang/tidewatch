@@ -209,7 +209,7 @@ struct MenuContentView: View {
     private var footer: some View {
         HStack {
             if let t = store.lastRefreshAt {
-                Text(L("更新于 ", "Updated ") + t.formatted(date: .omitted, time: .shortened))
+                Text(L("更新于 ", "Updated ") + t.localized(date: .omitted, time: .shortened))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
