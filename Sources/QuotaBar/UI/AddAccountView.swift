@@ -7,6 +7,7 @@ struct AddAccountView: View {
 
     @State private var pkce = PKCE()
     @State private var pastedCode = ""
+    @State private var customLabel = ""
     @State private var busy = false
     @State private var statusText = ""
     @State private var errorText = ""
@@ -63,6 +64,9 @@ struct AddAccountView: View {
             TextField("粘贴授权码(形如 xxxx#yyyy)", text: $pastedCode)
                 .textFieldStyle(.roundedBorder)
 
+            TextField("账号备注名(可选,如\"个人 Max\")", text: $customLabel)
+                .textFieldStyle(.roundedBorder)
+
             Button(busy ? "验证中…" : "完成登录") {
                 Task { await finishClaude() }
             }
@@ -83,12 +87,13 @@ struct AddAccountView: View {
         errorText = ""
         do {
             let creds = try await ClaudeOAuth.exchange(pastedCode: pastedCode, pkce: pkce)
-            var label = "未命名 Claude"
+            var label = customLabel.trimmingCharacters(in: .whitespaces)
             var plan: String?
             if let profile = try? await ClaudeProvider.fetchProfile(accessToken: creds.accessToken) {
-                if let email = profile.email { label = email }
+                if label.isEmpty, let email = profile.email { label = email }
                 plan = profile.plan
             }
+            if label.isEmpty { label = "未命名 Claude" }
             let account = Account(id: UUID(), provider: .claude, label: label, planType: plan, source: .managed, addedAt: Date())
             if let data = try? JSONEncoder().encode(creds) {
                 KeychainStore.save(data, key: account.id.uuidString)
