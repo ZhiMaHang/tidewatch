@@ -76,6 +76,11 @@ struct MenuContentView: View {
                 Button(L("添加 Claude 账号…", "Add Claude account…")) { openAdd(.claude) }
                 Button(L("添加 Codex 账号…", "Add Codex account…")) { openAdd(.codex) }
                 Divider()
+                Button(L("Claude Design 项目…", "Claude Design projects…")) {
+                    openWindow(id: DesignProjectsWindow.windowID)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+                Divider()
                 Picker(L("刷新间隔", "Refresh interval"), selection: Bindable(store).refreshIntervalMinutes) {
                     // Claude 端点社区实测安全轮询 >= 180s
                     Text(L("3 分钟", "3 min")).tag(3)

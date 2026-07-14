@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AccountCardView: View {
     @Environment(UsageStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
     let account: Account
     let state: AccountState
 
@@ -114,18 +115,15 @@ struct AccountCardView: View {
             }
 
             if let projects = store.designProjects[account.id], !projects.isEmpty {
-                Divider().padding(.vertical, 1)
-                Text(L("Claude Design 项目 (\(projects.count))", "Claude Design projects (\(projects.count))"))
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(projects) { project in
-                    Link(destination: URL(string: project.url ?? "https://claude.ai/design") ?? URL(string: "https://claude.ai/design")!) {
-                        Label(project.name, systemImage: "paintpalette")
-                            .font(.system(size: 11))
-                            .lineLimit(1)
-                    }
-                    .buttonStyle(.plain)
+                Button {
+                    openWindow(id: DesignProjectsWindow.windowID)
+                    NSApp.activate(ignoringOtherApps: true)
+                } label: {
+                    Label(L("Design 项目 (\(projects.count)) ›", "Design projects (\(projects.count)) ›"), systemImage: "paintpalette")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
                 }
+                .buttonStyle(.plain)
             }
         }
         .padding(10)

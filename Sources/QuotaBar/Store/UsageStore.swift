@@ -8,6 +8,8 @@ final class UsageStore {
     var states: [UUID: AccountState] = [:]
     /// 每个 Claude 账号的 Claude Design 项目列表(有 design 登录才有)
     var designProjects: [UUID: [DesignProject]] = [:]
+    /// 项目 id → QuotaBar 首次发现该项目的时间(接口不返回真实时间,这是替代;持久化)
+    var designFirstSeen: [String: Date] = [:]
     var lastRefreshAt: Date?
     /// 「添加账号」窗口当前要添加的提供方(nil = 窗口空置)。不持久化,仅驱动独立窗口
     var pendingAddProvider: Provider?
@@ -28,6 +30,21 @@ final class UsageStore {
         let stored = UserDefaults.standard.integer(forKey: "refreshIntervalMinutes")
         refreshIntervalMinutes = stored >= 3 ? stored : 5
         accounts = AccountsRepository.load()
+        if let data = UserDefaults.standard.data(forKey: "designFirstSeen"),
+           let d = try? JSONDecoder().decode([String: Date].self, from: data) {
+            designFirstSeen = d
+        }
+    }
+
+    private func recordFirstSeen(_ projects: [DesignProject]) {
+        var changed = false
+        for p in projects where designFirstSeen[p.id] == nil {
+            designFirstSeen[p.id] = Date()
+            changed = true
+        }
+        if changed, let data = try? JSONEncoder().encode(designFirstSeen) {
+            UserDefaults.standard.set(data, forKey: "designFirstSeen")
+        }
     }
 
     func start(immediate: Bool = true) {
@@ -172,7 +189,9 @@ final class UsageStore {
         designAvailable[account.id] = has
         guard has else { return }
         do {
-            designProjects[account.id] = try await DesignProvider.fetchProjects(for: account)
+            let projects = try await DesignProvider.fetchProjects(for: account)
+            designProjects[account.id] = projects
+            recordFirstSeen(projects)
         } catch {
             designProjects[account.id] = nil // token 失效/过期就别再显示旧列表
         }
@@ -182,7 +201,9 @@ final class UsageStore {
     func refreshDesignForced(_ account: Account) async {
         designAvailable[account.id] = true
         do {
-            designProjects[account.id] = try await DesignProvider.fetchProjects(for: account)
+            let projects = try await DesignProvider.fetchProjects(for: account)
+            designProjects[account.id] = projects
+            recordFirstSeen(projects)
         } catch {
             designProjects[account.id] = nil
         }

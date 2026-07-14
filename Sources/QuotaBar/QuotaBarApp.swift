@@ -36,6 +36,14 @@ struct QuotaBarApp: App {
         .windowResizability(.contentSize)
         .defaultPosition(.center)
         .commandsRemoved()
+
+        Window(L("Claude Design 项目", "Claude Design projects"), id: DesignProjectsWindow.windowID) {
+            DesignProjectsWindow()
+                .environment(store)
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+        .commandsRemoved()
     }
 
     @ViewBuilder
