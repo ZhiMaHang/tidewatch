@@ -2,7 +2,7 @@ import SwiftUI
 
 struct MenuContentView: View {
     @Environment(UsageStore.self) private var store
-    @State private var addSheet: Provider?
+    @Environment(\.openWindow) private var openWindow
     @State private var isRefreshing = false
 
     var body: some View {
@@ -26,9 +26,13 @@ struct MenuContentView: View {
             footer
         }
         .frame(width: 340)
-        .sheet(item: $addSheet) { provider in
-            AddAccountView(provider: provider) { addSheet = nil }
-        }
+    }
+
+    private func openAdd(_ provider: Provider) {
+        store.pendingAddProvider = provider
+        openWindow(id: AddAccountHost.windowID)
+        // accessory 应用需主动激活,窗口才能成为 key window 让输入框获得光标
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private var header: some View {
@@ -54,8 +58,8 @@ struct MenuContentView: View {
             }
 
             Menu {
-                Button("添加 Claude 账号…") { addSheet = .claude }
-                Button("添加 Codex 账号…") { addSheet = .codex }
+                Button("添加 Claude 账号…") { openAdd(.claude) }
+                Button("添加 Codex 账号…") { openAdd(.codex) }
                 Divider()
                 Picker("刷新间隔", selection: Bindable(store).refreshIntervalMinutes) {
                     // Claude 端点社区实测安全轮询 >= 180s
@@ -88,8 +92,8 @@ struct MenuContentView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             HStack {
-                Button("添加 Claude") { addSheet = .claude }
-                Button("添加 Codex") { addSheet = .codex }
+                Button("添加 Claude") { openAdd(.claude) }
+                Button("添加 Codex") { openAdd(.codex) }
             }
         }
         .padding(24)

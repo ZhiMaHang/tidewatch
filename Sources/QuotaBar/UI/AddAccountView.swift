@@ -1,5 +1,31 @@
 import SwiftUI
 
+/// 「添加账号」独立窗口的根视图:从 store.pendingAddProvider 取要添加的提供方,
+/// 完成/取消后清空并关闭窗口。窗口能成为 key window,输入框才能获得光标。
+struct AddAccountHost: View {
+    static let windowID = "add-account"
+
+    @Environment(UsageStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Group {
+            if let provider = store.pendingAddProvider {
+                AddAccountView(provider: provider) {
+                    store.pendingAddProvider = nil
+                    dismiss()
+                }
+            } else {
+                // 冷启动时系统可能恢复空窗口,直接关掉
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .onAppear { dismiss() }
+            }
+        }
+        .onAppear { NSApp.activate(ignoringOtherApps: true) }
+    }
+}
+
 struct AddAccountView: View {
     @Environment(UsageStore.self) private var store
     let provider: Provider

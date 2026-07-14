@@ -26,6 +26,16 @@ struct QuotaBarApp: App {
             menuBarLabel
         }
         .menuBarExtraStyle(.window)
+
+        // 「添加账号」独立开一个真窗口。MenuBarExtra 的面板是 nonactivating panel,
+        // 在它上面弹 sheet 时 TextField 拿不到键盘焦点(光标进不去),必须用能成为 key window 的普通窗口。
+        Window("添加账号", id: AddAccountHost.windowID) {
+            AddAccountHost()
+                .environment(store)
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+        .commandsRemoved()
     }
 
     @ViewBuilder

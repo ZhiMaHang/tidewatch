@@ -7,6 +7,8 @@ final class UsageStore {
     var accounts: [Account] = []
     var states: [UUID: AccountState] = [:]
     var lastRefreshAt: Date?
+    /// 「添加账号」窗口当前要添加的提供方(nil = 窗口空置)。不持久化,仅驱动独立窗口
+    var pendingAddProvider: Provider?
     var refreshIntervalMinutes: Int {
         didSet {
             guard refreshIntervalMinutes != oldValue else { return }
