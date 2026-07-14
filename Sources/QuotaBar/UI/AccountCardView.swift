@@ -50,6 +50,7 @@ struct AccountCardView: View {
                         .font(.system(size: 11))
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .fixedSize()
             }
 
