@@ -23,6 +23,8 @@ struct MenuContentView: View {
             footer
         }
         .frame(width: 340)
+        // 语言切换时强制整棵子树重建,让独立 struct 视图(卡片/进度条)也重跑 body 重译
+        .id(store.languageMode)
     }
 
     private var accountList: some View {

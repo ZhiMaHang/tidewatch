@@ -37,6 +37,7 @@ struct DesignProjectsWindow: View {
             }
         }
         .frame(width: 480, height: 540)
+        .id(store.languageMode) // 语言切换即重译
         .background(WindowConfigurator { window in
             window.level = .normal
             window.hidesOnDeactivate = false

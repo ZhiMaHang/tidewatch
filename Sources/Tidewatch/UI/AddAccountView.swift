@@ -80,6 +80,7 @@ struct AddAccountView: View {
         }
         .padding(16)
         .frame(width: 380)
+        .id(store.languageMode) // 语言切换即重译
     }
 
     // MARK: Claude:浏览器授权 + 粘贴授权码
