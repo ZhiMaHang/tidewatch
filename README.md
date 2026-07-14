@@ -12,7 +12,20 @@
 
 ## 截图
 
-> 截图补充中。
+<p align="center"><img src="docs/panel.png" width="380" alt="Tidewatch 主面板"></p>
+
+<p align="center"><em>主面板:Claude / Codex / GLM 多账号一屏,各时间窗口用量、重置倒计时、套餐档、订阅到期日、付款方式一目了然。</em></p>
+
+<table align="center">
+  <tr>
+    <td align="center"><img src="docs/add-claude.png" width="360" alt="添加 Claude 账号"><br><sub>添加 Claude(浏览器授权 → 粘贴授权码)</sub></td>
+    <td align="center"><img src="docs/add-glm.png" width="360" alt="添加 GLM 账号"><br><sub>添加 GLM(贴入 z.ai API key)</sub></td>
+  </tr>
+</table>
+
+<p align="center"><img src="docs/panel-detail.png" width="380" alt="按模型细分与颜色分级"></p>
+
+<p align="center"><em>按模型细分的周额度(Fable / Opus / Sonnet…),进度条随用量绿 → 橙 → 红;每张卡片可进入该账号的 Design 项目列表。</em></p>
 
 ---
 
