@@ -44,6 +44,8 @@ struct UsageSnapshot: Equatable {
     var planType: String?
     var email: String?
     var creditsBalance: String?
+    /// 订阅到期/续订日(目前仅 Codex 从 id_token 拿得到;Claude 接口不暴露,为 nil)
+    var subscriptionEndsAt: Date? = nil
     var fetchedAt: Date
 }
 

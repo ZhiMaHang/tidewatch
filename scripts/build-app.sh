@@ -17,7 +17,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <dict>
     <key>CFBundleName</key><string>QuotaBar</string>
     <key>CFBundleDisplayName</key><string>QuotaBar</string>
-    <key>CFBundleIdentifier</key><string>com.zhouxiajie.quotabar</string>
+    <key>CFBundleIdentifier</key><string>com.zhimahang.quotabar</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundlePackageType</key><string>APPL</string>

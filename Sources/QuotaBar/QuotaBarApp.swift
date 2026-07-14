@@ -58,6 +58,8 @@ struct QuotaBarApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 改名后一次性把旧钥匙串服务名下的 token 迁到新名,避免已添加账号丢失
+        KeychainStore.migrateLegacyServiceIfNeeded()
         // 菜单栏应用,不占 Dock(swift run 直跑时也生效;打包后由 LSUIElement 保证)
         NSApp.setActivationPolicy(.accessory)
     }
@@ -99,6 +101,9 @@ private func checkOne(_ account: Account) async {
         }
         if let plan = snapshot.planType { print("  " + L("套餐: ", "Plan: ") + plan) }
         if let email = snapshot.email { print("  " + L("邮箱: ", "Email: ") + email) }
+        if let end = snapshot.subscriptionEndsAt {
+            print("  " + L("订阅至: ", "Renews: ") + end.formatted(date: .abbreviated, time: .omitted))
+        }
         for w in snapshot.windows {
             let reset = w.resetsAt.map { " (" + L("重置于 ", "resets ") + "\($0.formatted()))" } ?? ""
             print("  \(w.title): \(Int(w.usedPercent))%\(reset)")

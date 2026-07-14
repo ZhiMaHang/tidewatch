@@ -175,8 +175,17 @@ enum CodexProvider {
             planType: obj["plan_type"] as? String,
             email: obj["email"] as? String,
             creditsBalance: credits,
+            subscriptionEndsAt: tokens.id_token.flatMap(subscriptionEnd(fromIDToken:)),
             fetchedAt: Date()
         )
+    }
+
+    /// 从 id_token 的 openai auth 声明里读订阅到期/续订日
+    static func subscriptionEnd(fromIDToken idToken: String) -> Date? {
+        guard let payload = JWT.payload(idToken),
+              let auth = payload["https://api.openai.com/auth"] as? [String: Any],
+              let s = auth["chatgpt_subscription_active_until"] as? String else { return nil }
+        return parseISODate(s)
     }
 
     static func parseRateLimit(_ rl: [String: Any], namePrefix: String?) -> [UsageWindow] {

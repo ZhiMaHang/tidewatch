@@ -25,6 +25,15 @@ struct AccountCardView: View {
                             .font(.system(size: 9))
                             .foregroundStyle(.tertiary)
                     }
+                    if let end = state.snapshot?.subscriptionEndsAt {
+                        Label {
+                            Text(L("订阅至 ", "Renews ") + end.formatted(date: .abbreviated, time: .omitted))
+                        } icon: {
+                            Image(systemName: "calendar")
+                        }
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 Menu {
