@@ -1,0 +1,52 @@
+name: Release
+
+# 打形如 v0.1.0 的 tag 时:构建 universal(Apple Silicon + Intel).app,
+# 打成 .dmg,并发布到 GitHub Release 供下载。
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Build universal .app + .dmg
+        run: ./scripts/build-dmg.sh "$VERSION"
+
+      - name: Checksums
+        run: |
+          cd dist
+          shasum -a 256 Tidewatch-*.dmg > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Tidewatch-*.dmg
+            dist/SHA256SUMS.txt
+          generate_release_notes: true
+          body: |
+            **Tidewatch ${{ github.ref_name }}** — universal (Apple Silicon + Intel), macOS 14+.
+
+            ### Install
+            1. Download `Tidewatch-*.dmg` below, open it, and drag **Tidewatch** into **Applications**.
+            2. Tidewatch is **not Apple-notarized** (open-source, zero-budget project). On macOS 15 (Sequoia) it may say *“Tidewatch is damaged and can’t be opened.”* — that's expected for unsigned apps, **not** a real problem. Clear the download quarantine in Terminal:
+               ```
+               xattr -dr com.apple.quarantine /Applications/Tidewatch.app
+               ```
+               …or go to **System Settings → Privacy & Security → (scroll down) → Open Anyway**.
+            3. The first time you import an account, macOS asks to access your Claude Code / Codex credentials — that's reading the local CLI's own usage credentials, on your Mac only, nothing uploaded. Click **Always Allow**.
+
+            > Because the build is unsigned, its signature changes every release, so macOS may prompt for Keychain access again after updating — that's the unsigned build, not a bug. Prefer to build it yourself? Clone the repo and run `./scripts/build-app.sh`.
+
+            SHA256 checksums are in `SHA256SUMS.txt`.

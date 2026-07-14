@@ -50,17 +50,37 @@
 
 ## 安装
 
-要求 **macOS 14+**。
+要求 **macOS 14+**。通用包(Apple 芯片 + Intel)。
+
+### 下载 .dmg(推荐)
+
+到 [**Releases**](https://github.com/ZhiMaHang/tidewatch/releases) 页下载最新的 `Tidewatch-*.dmg`,打开后把 **Tidewatch** 拖进「应用程序」。
+
+Tidewatch **尚未做 Apple 公证**(我们是零预算的开源独立项目,代码全部公开可自查),所以首次打开 macOS 可能会拦:
+
+- **macOS 15(Sequoia)及以上**常会提示 **「"Tidewatch" 已损坏,应移到废纸篓」**——这是未公证 App 的正常表现,**不是你电脑或下载有问题**。打开「终端」粘贴执行(作用:解除下载隔离标记):
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/Tidewatch.app
+  ```
+
+- 或者:**系统设置 → 隐私与安全性 → 下拉到底 →「仍要打开」**,再确认一次。*(注意:macOS 15+ 已经不能靠"右键→打开"绕过 Gatekeeper 了。)*
+
+首次导入账号时,系统会弹「Tidewatch 想访问 Claude Code / Codex 凭据」——这是读取本机 CLI 自用的用量凭据,只在你本机、不上传。点**始终允许**。
+
+> 因为未签名,每次发版签名身份都会变,所以**更新后可能需要重新授权钥匙串**——这是未签名导致的、非异常。(做 Apple 公证能根治,但零预算暂不排。)
+
+### 或者自己编译
+
+不想信任二进制?从源码构建(什么都不出你的机器):
 
 ```bash
 git clone https://github.com/ZhiMaHang/tidewatch.git
 cd tidewatch
-./scripts/build-app.sh          # 生成 dist/Tidewatch.app
+./scripts/build-app.sh          # 生成 dist/Tidewatch.app(当前架构)
 cp -R dist/Tidewatch.app /Applications/
 open /Applications/Tidewatch.app
 ```
-
-应用为 ad-hoc 签名(非公证)。首次打开若被 Gatekeeper 拦,到「系统设置 → 隐私与安全性」点**仍要打开**。首次读取钥匙串 / 本机 CLI 凭据时系统会弹授权框,点**始终允许**即可。
 
 ---
 

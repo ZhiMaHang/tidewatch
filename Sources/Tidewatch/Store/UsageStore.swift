@@ -179,6 +179,9 @@ final class UsageStore {
             }
         } catch QuotaError.unauthorized {
             states[account.id] = .needsReauth(L("凭据已失效,请重新登录", "Credentials expired, please sign in again"))
+        } catch QuotaError.parse {
+            // 解析失败=接口字段多半变了,进降级态(引导看新版),而不是当成用户侧错误
+            states[account.id] = .apiChanged
         } catch {
             states[account.id] = .error(error.localizedDescription)
         }

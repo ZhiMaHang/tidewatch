@@ -112,6 +112,22 @@ struct AccountCardView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                 }
+            case .apiChanged:
+                VStack(alignment: .leading, spacing: 3) {
+                    Label {
+                        Text(L("接口可能已变更,不是你的问题。", "The API may have changed — not your fault."))
+                            .font(.caption2)
+                    } icon: {
+                        Image(systemName: "wrench.and.screwdriver")
+                            .foregroundStyle(.secondary)
+                    }
+                    Link(destination: URL(string: "https://github.com/ZhiMaHang/tidewatch/releases")!) {
+                        Text(L("看是否有新版 ›", "Check for a newer version ›"))
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.blue)
+                }
             }
 
             if let projects = store.designProjects[account.id], !projects.isEmpty {

@@ -114,6 +114,8 @@ enum AccountState: Equatable {
     case loaded(UsageSnapshot)
     case needsReauth(String)
     case error(String)
+    /// 响应解析失败:多半是官方接口改了字段(不是用户的问题),提示看是否有新版
+    case apiChanged
 
     var snapshot: UsageSnapshot? {
         if case .loaded(let s) = self { return s }

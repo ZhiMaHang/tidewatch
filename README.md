@@ -50,17 +50,37 @@ The interface is **bilingual** — it follows your system language (Simplified/T
 
 ## Install
 
-Requires **macOS 14+**.
+Requires **macOS 14+**. Universal build (Apple Silicon + Intel).
+
+### Download the .dmg (recommended)
+
+Grab the latest `Tidewatch-*.dmg` from the [**Releases**](https://github.com/ZhiMaHang/tidewatch/releases) page, open it, and drag **Tidewatch** into **Applications**.
+
+Tidewatch is **not Apple-notarized** (this is an open-source, zero-budget project — the code is here for you to audit). So on first launch macOS may complain:
+
+- On **macOS 15 (Sequoia) and later**, you'll often see *"Tidewatch is damaged and can't be opened."* — that's the expected behavior for an unsigned app, **not** a problem with your Mac or the download. Clear the download-quarantine flag in **Terminal**:
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/Tidewatch.app
+  ```
+
+- Alternatively: **System Settings → Privacy & Security → scroll to the bottom → "Open Anyway"**, then confirm. *(Note: right-clicking → Open no longer bypasses Gatekeeper on macOS 15+.)*
+
+On first account import, macOS asks to access your **Claude Code / Codex credentials** — that's reading the local CLI's own usage credentials, on your Mac only, nothing uploaded. Click **Always Allow**.
+
+> Because the build is unsigned, its signature changes with every release, so macOS may prompt for Keychain access **again after an update** — that's the unsigned build, not a bug. (An Apple-notarized build would fix this; it isn't in scope for a zero-budget project yet.)
+
+### Or build it yourself
+
+Don't want to trust a binary? Build from source (nothing leaves your machine):
 
 ```bash
 git clone https://github.com/ZhiMaHang/tidewatch.git
 cd tidewatch
-./scripts/build-app.sh          # produces dist/Tidewatch.app
+./scripts/build-app.sh          # produces dist/Tidewatch.app (current arch)
 cp -R dist/Tidewatch.app /Applications/
 open /Applications/Tidewatch.app
 ```
-
-The app is ad-hoc signed (not notarized). If Gatekeeper blocks the first launch, allow it under **System Settings → Privacy & Security → Open Anyway**. The first time it reads the Keychain / a local CLI credential, macOS shows a prompt — click **Always Allow**.
 
 ---
 
