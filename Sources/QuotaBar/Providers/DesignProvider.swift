@@ -21,6 +21,16 @@ enum DesignProvider {
     static let clientID = "59637612-477b-4836-a601-b0589eda7704"
 
     static func keychainKey(_ account: Account) -> String { "design-\(account.id.uuidString)" }
+    static func rescueKey(_ account: Account) -> String { "design-rescue-\(account.id.uuidString)" }
+
+    /// 串行锁 key:.claudeCLI 的 design token 与主 token 同住一个钥匙串条目,
+    /// 必须和 usage 刷新用**同一把锁**(不带 design: 前缀),否则并发读改写会互相覆盖、
+    /// 冲掉对方的轮转 token,连带搞坏用户真实的 Claude Code 登录。
+    /// managed 的 design token 是独立钥匙串键,用 design: 前缀即可。
+    static func lockKey(for account: Account) -> String {
+        if case .claudeCLI = account.source { return credentialLockKey(account) }
+        return "design:" + credentialLockKey(account)
+    }
 
     // MARK: 是否有 design 凭据(避免对没登录的账号发无谓请求)
 
@@ -31,6 +41,17 @@ enum DesignProvider {
     // MARK: 读写凭据
 
     static func loadCredentials(for account: Account) throws -> DesignCredentials {
+        let primary = try loadPrimaryCredentials(for: account)
+        // 上次刷新后写回失败会把新 token 暂存到 rescue;若它更新则优先用它,避免拿着已轮转掉的旧 token
+        if let rd = KeychainStore.load(key: rescueKey(account)),
+           let rescued = try? JSONDecoder().decode(DesignCredentials.self, from: rd),
+           (rescued.expiresAt ?? 0) > (primary.expiresAt ?? 0) {
+            return rescued
+        }
+        return primary
+    }
+
+    private static func loadPrimaryCredentials(for account: Account) throws -> DesignCredentials {
         switch account.source {
         case .managed:
             guard let data = KeychainStore.load(key: keychainKey(account)),
@@ -65,6 +86,13 @@ enum DesignProvider {
         }
     }
 
+    /// 带锁写回:与 usage 刷新在同一把锁上互斥(见 lockKey),登录/刷新都走这里
+    static func persistLocked(_ creds: DesignCredentials, for account: Account) async throws {
+        try await KeyedLocks.shared.run(lockKey(for: account)) {
+            try persistOrRescue(creds, for: account)
+        }
+    }
+
     static func persist(_ creds: DesignCredentials, for account: Account) throws {
         switch account.source {
         case .managed:
@@ -75,12 +103,15 @@ enum DesignProvider {
             // 把 designOauth 合并写回 Claude Code 的存储,保留 mcpOAuth/claudeAiOauth 等兄弟键
             let filePath: String?
             let existingRaw: Data?
+            var hitAccount: String?
             if let path {
                 filePath = path
                 existingRaw = try? Data(contentsOf: URL(fileURLWithPath: path))
             } else {
                 filePath = nil
-                existingRaw = KeychainStore.readForeign(service: ClaudeProvider.cliKeychainService)
+                let item = KeychainStore.readForeignItem(service: ClaudeProvider.cliKeychainService)
+                existingRaw = item?.data
+                hitAccount = item?.account
             }
             var obj = (existingRaw.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
             guard !obj.isEmpty else {
@@ -97,13 +128,15 @@ enum DesignProvider {
             if let filePath {
                 try SecureFile.write(out, toPath: filePath)
             } else {
-                guard KeychainStore.writeForeign(service: ClaudeProvider.cliKeychainService, data: out) else {
+                // 写回读到的同一条目,不凭 service 猜
+                guard KeychainStore.writeForeign(service: ClaudeProvider.cliKeychainService, account: hitAccount, data: out) else {
                     throw QuotaError.missingCredentials(L("写回钥匙串失败", "Failed to write back to the keychain"))
                 }
             }
         case .codexAuthFile:
             throw QuotaError.missingCredentials(L("账号来源类型不匹配", "Account source type mismatch"))
         }
+        KeychainStore.delete(key: rescueKey(account)) // 写回成功,清掉可能存在的 rescue
     }
 
     static func persistOrRescue(_ creds: DesignCredentials, for account: Account) throws {
@@ -111,7 +144,7 @@ enum DesignProvider {
             try persist(creds, for: account)
         } catch {
             if let data = try? JSONEncoder().encode(creds) {
-                KeychainStore.save(data, key: "design-rescue-\(account.id.uuidString)")
+                KeychainStore.save(data, key: rescueKey(account))
             }
             throw QuotaError.oauth(L("Design token 已刷新但写回失败(已暂存 rescue):", "Design token refreshed but write-back failed (stashed to rescue): ") + error.localizedDescription)
         }
@@ -145,7 +178,7 @@ enum DesignProvider {
     // MARK: 拉项目
 
     static func fetchProjects(for account: Account) async throws -> [DesignProject] {
-        try await KeyedLocks.shared.run("design:" + credentialLockKey(account)) {
+        try await KeyedLocks.shared.run(lockKey(for: account)) {
             var creds = try loadCredentials(for: account)
             if creds.isExpired {
                 creds = try await refresh(creds)

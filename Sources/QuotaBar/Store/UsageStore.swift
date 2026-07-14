@@ -21,6 +21,8 @@ final class UsageStore {
 
     private var refreshLoop: Task<Void, Never>?
     private var inFlight: [UUID: Task<Void, Never>] = [:]
+    /// 是否有 design 凭据的缓存(nil=未判定),避免每轮刷新做钥匙串读
+    private var designAvailable: [UUID: Bool] = [:]
 
     init() {
         let stored = UserDefaults.standard.integer(forKey: "refreshIntervalMinutes")
@@ -134,10 +136,12 @@ final class UsageStore {
         accounts.removeAll { $0.id == account.id }
         states[account.id] = nil
         designProjects[account.id] = nil
+        designAvailable[account.id] = nil
         if case .managed = account.source {
             KeychainStore.delete(key: account.id.uuidString)
             KeychainStore.delete(key: DesignProvider.keychainKey(account))
         }
+        KeychainStore.delete(key: DesignProvider.rescueKey(account)) // 清 design rescue 残留
         AccountsRepository.save(accounts)
     }
 
@@ -159,11 +163,28 @@ final class UsageStore {
         AccountsRepository.save(accounts)
     }
 
-    /// 拉该账号的 Claude Design 项目(仅当已 design 登录);best-effort,失败不打扰
+    /// 拉该账号的 Claude Design 项目(仅当已 design 登录);best-effort。
+    /// designAvailable 缓存避免每轮刷新都做钥匙串读(尤其 claudeCLI 的外部钥匙串读会弹框)。
     func refreshDesign(_ account: Account) async {
-        guard account.provider == .claude, DesignProvider.hasCredentials(for: account) else { return }
-        if let projects = try? await DesignProvider.fetchProjects(for: account) {
-            designProjects[account.id] = projects
+        guard account.provider == .claude else { return }
+        if designAvailable[account.id] == false { return }
+        let has = designAvailable[account.id] ?? DesignProvider.hasCredentials(for: account)
+        designAvailable[account.id] = has
+        guard has else { return }
+        do {
+            designProjects[account.id] = try await DesignProvider.fetchProjects(for: account)
+        } catch {
+            designProjects[account.id] = nil // token 失效/过期就别再显示旧列表
+        }
+    }
+
+    /// 刚 design 登录成功后立即拉(跳过缓存判定)
+    func refreshDesignForced(_ account: Account) async {
+        designAvailable[account.id] = true
+        do {
+            designProjects[account.id] = try await DesignProvider.fetchProjects(for: account)
+        } catch {
+            designProjects[account.id] = nil
         }
     }
 

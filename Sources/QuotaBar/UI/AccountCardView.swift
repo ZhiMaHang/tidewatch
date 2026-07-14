@@ -71,8 +71,8 @@ struct AccountCardView: View {
                             guard let r = DesignLoginPrompt.run() else { return }
                             Task {
                                 if let creds = try? await ClaudeDesignOAuth.exchange(pastedCode: r.code, pkce: r.pkce),
-                                   (try? DesignProvider.persist(creds, for: account)) != nil {
-                                    await store.refreshDesign(account)
+                                   (try? await DesignProvider.persistLocked(creds, for: account)) != nil {
+                                    await store.refreshDesignForced(account)
                                 }
                             }
                         }
