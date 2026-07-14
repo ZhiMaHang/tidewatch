@@ -21,6 +21,19 @@ final class UsageStore {
         }
     }
 
+    /// 界面语言:跟随系统 / 中文 / English。改动即持久化;因 L() 读 AppLanguage.current
+    /// (读同一份持久化),而 UI 观察本属性 → 变更后整树重渲染,文案实时切换。
+    var languageMode: LanguageMode {
+        didSet {
+            guard languageMode != oldValue else { return }
+            UserDefaults.standard.set(languageMode.rawValue, forKey: LanguageMode.storageKey)
+        }
+    }
+
+    /// 手动「立即检查更新」的瞬时反馈(自动回路不用它)
+    enum ManualCheck: Equatable { case idle, checking, upToDate(String), failed }
+    var manualCheck: ManualCheck = .idle
+
     /// 有更新且未被用户忽略时非 nil,驱动面板顶部那条克制的「有新版」横幅
     var updateInfo: UpdateInfo?
     /// 匿名版本检查开关(隐私红线:可关)。默认开;关闭立即撤掉横幅并停掉 ping
@@ -50,6 +63,7 @@ final class UsageStore {
         refreshIntervalMinutes = stored >= 3 ? stored : 5
         // 默认开:老用户/首启时该 key 不存在(nil)也视为开。didSet 在 init 内不触发,不会提前启动 loop。
         updateCheckEnabled = UserDefaults.standard.object(forKey: Keys.updateCheckEnabled) as? Bool ?? true
+        languageMode = LanguageMode.stored
         accounts = AccountsRepository.load()
         if let data = UserDefaults.standard.data(forKey: "designFirstSeen"),
            let d = try? JSONDecoder().decode([String: Date].self, from: data) {
@@ -126,6 +140,26 @@ final class UsageStore {
             UserDefaults.standard.set(v, forKey: Keys.skippedUpdateVersion)
         }
         updateInfo = nil
+    }
+
+    /// 手动「立即检查更新」:无视开关与「忽略此版本」(用户明确要查),给出明确反馈。
+    /// 有新版→亮横幅;已是最新/失败→顶部短暂提示 3 秒后自动消失。
+    func checkForUpdatesNow() async {
+        manualCheck = .checking
+        switch await UpdateChecker.checkNow() {
+        case .newer(let info):
+            UserDefaults.standard.removeObject(forKey: Keys.skippedUpdateVersion) // 手动查:清掉「忽略」,确保横幅出
+            updateInfo = info
+            manualCheck = .idle // 结果用横幅呈现
+            return
+        case .upToDate(let v):
+            updateInfo = nil
+            manualCheck = .upToDate(v)
+        case .failed:
+            manualCheck = .failed
+        }
+        try? await Task.sleep(for: .seconds(3))
+        switch manualCheck { case .upToDate, .failed: manualCheck = .idle; default: break }
     }
 
     // MARK: 刷新

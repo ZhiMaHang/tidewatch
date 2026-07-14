@@ -45,14 +45,27 @@ enum UpdateChecker {
     /// 端点落自有域(offical,zhimahang.com,静态门户,1Panel + OpenResty 托管)。零后端。
     static let endpoint = URL(string: "https://zhimahang.com/tidewatch/latest.json")!
 
+    /// 手动检查用的详细结果(能区分「已是最新」与「检查失败」,给用户明确反馈)。
+    enum CheckResult: Equatable {
+        case newer(UpdateInfo)   // 有严格更新的线上版本
+        case upToDate(String)    // 已是最新(带当前版本号)
+        case failed              // 网络错误 / 非 2xx / 解析失败
+    }
+
     /// 拉取并判断:返回 non-nil 仅当线上版本严格高于本机版本。
-    /// 检查关闭之外的一切失败(网络错误/非 2xx/解析失败/已是最新)都返回 nil 并静默,绝不打断用户。
+    /// 自动回路用(失败/已是最新都返回 nil 并静默,绝不打断用户)。
     static func fetchIfNewer() async -> UpdateInfo? {
+        if case .newer(let info) = await checkNow() { return info }
+        return nil
+    }
+
+    /// 拉取一次并返回详细结果。手动「立即检查更新」用它区分反馈。
+    static func checkNow() async -> CheckResult {
         let current = AppVersion.current
-        guard var comps = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else { return nil }
+        guard var comps = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else { return .failed }
         // 版本号放 query,方便 OpenResty 访问日志按版本分段计数(装机/留存度量)。只带版本号,别的都不带。
         comps.queryItems = [URLQueryItem(name: "v", value: current)]
-        guard let url = comps.url else { return nil }
+        guard let url = comps.url else { return .failed }
 
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
@@ -66,14 +79,15 @@ enum UpdateChecker {
               let http = resp as? HTTPURLResponse,
               (200..<300).contains(http.statusCode),
               let payload = try? JSONDecoder().decode(LatestPayload.self, from: data) else {
-            return nil
+            return .failed
         }
         let latest = payload.latest.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !latest.isEmpty, isNewer(latest, than: current) else { return nil }
-        return UpdateInfo(latest: latest,
-                          notesZh: payload.notes,
-                          notesEn: payload.notes_en,
-                          url: payload.url.flatMap(URL.init(string:)))
+        guard !latest.isEmpty else { return .failed }
+        guard isNewer(latest, than: current) else { return .upToDate(current) }
+        return .newer(UpdateInfo(latest: latest,
+                                 notesZh: payload.notes,
+                                 notesEn: payload.notes_en,
+                                 url: payload.url.flatMap(URL.init(string:))))
     }
 
     /// 语义化版本比较:`lhs` 是否严格新于 `rhs`。

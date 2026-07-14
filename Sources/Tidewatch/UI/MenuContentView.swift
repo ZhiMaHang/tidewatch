@@ -13,6 +13,7 @@ struct MenuContentView: View {
             header
             Divider()
             updateBanner
+            manualCheckFeedback
             if store.accounts.isEmpty {
                 emptyState
             } else {
@@ -90,9 +91,18 @@ struct MenuContentView: View {
                     Text(L("15 分钟", "15 min")).tag(15)
                     Text(L("30 分钟", "30 min")).tag(30)
                 }
+                Picker(L("语言", "Language"), selection: Bindable(store).languageMode) {
+                    ForEach(LanguageMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
                 Divider()
                 // 匿名版本检查:只发当前版本号,可随时关(隐私红线要求默认开、可关)
-                Toggle(L("检查更新", "Check for updates"), isOn: Bindable(store).updateCheckEnabled)
+                Toggle(L("自动检查更新", "Auto-check for updates"), isOn: Bindable(store).updateCheckEnabled)
+                Button(L("立即检查更新", "Check for updates now")) {
+                    Task { await store.checkForUpdatesNow() }
+                }
+                .disabled(store.manualCheck == .checking)
                 Divider()
                 Button(L("退出 Tidewatch", "Quit Tidewatch")) { NSApplication.shared.terminate(nil) }
             } label: {
@@ -143,6 +153,31 @@ struct MenuContentView: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.accentColor.opacity(0.10))
+            Divider()
+        }
+    }
+
+    /// 手动「立即检查更新」的瞬时反馈(检查中/已是最新/失败;有新版走上面的横幅)
+    @ViewBuilder
+    private var manualCheckFeedback: some View {
+        let content: (String, String)? = {
+            switch store.manualCheck {
+            case .checking: return ("arrow.triangle.2.circlepath", L("正在检查更新…", "Checking for updates…"))
+            case .upToDate(let v): return ("checkmark.circle", L("已是最新版本 (\(v))", "You're up to date (\(v))"))
+            case .failed: return ("wifi.exclamationmark", L("检查失败,请稍后再试", "Check failed, try again later"))
+            case .idle: return nil
+            }
+        }()
+        if let (icon, text) = content {
+            HStack(spacing: 6) {
+                Image(systemName: icon).foregroundStyle(.secondary)
+                Text(text).font(.caption)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.background.secondary)
             Divider()
         }
     }
