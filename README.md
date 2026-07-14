@@ -27,6 +27,10 @@
 
 <p align="center"><em>按模型细分的周额度(Fable / Opus / Sonnet…),进度条随用量绿 → 橙 → 红;每张卡片可进入该账号的 Design 项目列表。</em></p>
 
+<p align="center"><img src="docs/design.png" width="360" alt="Claude Design 项目列表"></p>
+
+<p align="center"><em>Claude Design 项目:按账号分组列出项目,名称可点开,附 Tidewatch 首次发现时间。</em></p>
+
 ---
 
 ## 功能一览
