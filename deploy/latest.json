@@ -1,6 +1,6 @@
 {
-  "latest": "0.1.0",
-  "notes": "首个公开版本。菜单栏查看你名下多个 Claude / Codex / z.ai(GLM) 订阅的额度窗口,不弄乱 CLI 登录。更新后如提示重新授权钥匙串,属未签名正常现象。",
-  "notes_en": "First public release. See usage windows for every Claude / Codex / z.ai (GLM) subscription you own, right in the menu bar — without touching your CLI logins. If macOS re-prompts for Keychain access after an update, that's expected for an unsigned build.",
-  "url": "https://zhimahang.com/tidewatch/"
+  "latest": "0.1.1",
+  "notes": "新增:菜单栏可手动切换界面语言(跟随系统 / 中文 / English)、手动「立即检查更新」。更新后如提示重新授权钥匙串,属未签名正常现象。",
+  "notes_en": "New: switch the UI language from the menu bar (System / Chinese / English), and a manual \"Check for updates now\". If macOS re-prompts for Keychain access after updating, that's expected for an unsigned build.",
+  "url": "https://github.com/ZhiMaHang/tidewatch/releases/latest"
 }

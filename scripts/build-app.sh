@@ -19,8 +19,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleName</key><string>Tidewatch</string>
     <key>CFBundleDisplayName</key><string>Tidewatch</string>
     <key>CFBundleIdentifier</key><string>com.zhimahang.tidewatch</string>
-    <key>CFBundleVersion</key><string>1</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleShortVersionString</key><string>0.1.1</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleExecutable</key><string>Tidewatch</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
