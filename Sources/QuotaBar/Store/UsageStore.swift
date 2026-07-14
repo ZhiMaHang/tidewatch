@@ -142,6 +142,12 @@ final class UsageStore {
         AccountsRepository.save(accounts)
     }
 
+    func setManualSubscriptionEnd(_ account: Account, date: Date?) {
+        guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
+        accounts[idx].manualSubscriptionEndsAt = date
+        AccountsRepository.save(accounts)
+    }
+
     // MARK: 菜单栏文案
 
     var menuBarText: String {

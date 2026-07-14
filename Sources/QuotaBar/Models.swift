@@ -30,6 +30,8 @@ struct Account: Codable, Identifiable, Equatable {
     var planType: String?
     var source: CredentialSource
     var addedAt: Date
+    /// 用户手填的订阅到期日(主要给 Claude 用——接口拿不到)。可选,老 accounts.json 缺此键解码为 nil
+    var manualSubscriptionEndsAt: Date? = nil
 }
 
 struct UsageWindow: Equatable {

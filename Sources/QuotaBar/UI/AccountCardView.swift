@@ -15,17 +15,18 @@ struct AccountCardView: View {
                         .lineLimit(1)
                     HStack(spacing: 4) {
                         if let plan = account.planType ?? state.snapshot?.planType {
-                            Text(plan.uppercased())
+                            Text(planBadge(plan))
                                 .font(.system(size: 9, weight: .bold))
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 1)
                                 .background(.quaternary, in: Capsule())
+                                .padding(.leading, -4) // 抵消胶囊左内边距,让徽章文字左缘与名称对齐
                         }
                         Text(sourceDescription)
                             .font(.system(size: 9))
                             .foregroundStyle(.tertiary)
                     }
-                    if let end = state.snapshot?.subscriptionEndsAt {
+                    if let end = account.manualSubscriptionEndsAt ?? state.snapshot?.subscriptionEndsAt {
                         Label {
                             Text(L("订阅至 ", "Renews ") + end.formatted(date: .abbreviated, time: .omitted))
                         } icon: {
@@ -40,6 +41,13 @@ struct AccountCardView: View {
                     Button(L("重命名…", "Rename…")) {
                         if let name = RenamePrompt.run(current: account.label) {
                             store.relabel(account, to: name)
+                        }
+                    }
+                    Button(L("设置订阅到期日…", "Set renewal date…")) {
+                        switch DatePrompt.run(current: account.manualSubscriptionEndsAt) {
+                        case .set(let d): store.setManualSubscriptionEnd(account, date: d)
+                        case .clear: store.setManualSubscriptionEnd(account, date: nil)
+                        case .cancel: break
                         }
                     }
                     Button(L("刷新", "Refresh")) { Task { await store.refresh(account, force: true) } }
@@ -88,6 +96,15 @@ struct AccountCardView: View {
             .frame(width: 22, height: 22)
             .background(account.provider == .claude ? Color.orange.opacity(0.85) : Color.teal.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
             .foregroundStyle(.white)
+    }
+
+    /// 徽章文案:去掉 claude_/chatgpt_ 前缀再大写(claude_max -> MAX,pro -> PRO)
+    private func planBadge(_ plan: String) -> String {
+        var s = plan.lowercased()
+        for prefix in ["claude_", "claude-", "claude ", "chatgpt_", "chatgpt-", "chatgpt "] {
+            if s.hasPrefix(prefix) { s = String(s.dropFirst(prefix.count)); break }
+        }
+        return s.uppercased()
     }
 
     private var sourceDescription: String {
