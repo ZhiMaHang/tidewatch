@@ -167,7 +167,9 @@ enum ClaudeProvider {
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw QuotaError.parse(L("usage 响应不是 JSON 对象", "usage response is not a JSON object"))
         }
-        let windows = parseWindows(obj)
+        // 新版响应把各限额(含 Fable 等按模型细分的周额度)放在 limits 数组里,优先用它;
+        // 没有 limits 才回退到旧的扁平 seven_day_* 键。
+        let windows = parseLimits(obj) ?? parseWindows(obj)
         guard !windows.isEmpty else {
             throw QuotaError.parse(L("usage 响应里没有识别到额度窗口: ", "No usage windows found in the response: ") + String(String(data: data, encoding: .utf8)?.prefix(160) ?? ""))
         }
@@ -187,6 +189,40 @@ enum ClaudeProvider {
             "cowork": L("本周(Routines)", "This week (Routines)"),
             "extra_usage": L("额外用量", "Extra usage"),
         ]
+    }
+
+    /// 解析新版 limits 数组:每项 { kind, group, percent, resets_at, is_active, scope.model.display_name }。
+    /// kind: session / weekly_all / weekly_scoped(按模型细分,如 Fable)。返回 nil 表示响应里没有 limits。
+    static func parseLimits(_ obj: [String: Any]) -> [UsageWindow]? {
+        guard let limits = obj["limits"] as? [[String: Any]], !limits.isEmpty else { return nil }
+        var result: [UsageWindow] = []
+        for (i, lim) in limits.enumerated() {
+            guard let percent = (lim["percent"] as? Double) ?? (lim["percent"] as? Int).map(Double.init) else { continue }
+            let kind = lim["kind"] as? String ?? ""
+            let group = lim["group"] as? String ?? ""
+            var model: String?
+            if let scope = lim["scope"] as? [String: Any], let m = scope["model"] as? [String: Any] {
+                model = m["display_name"] as? String
+            }
+            var resetsAt: Date?
+            if let s = lim["resets_at"] as? String { resetsAt = parseISODate(s) }
+            result.append(UsageWindow(
+                key: "limit-\(i)-\(kind)-\(model ?? "")",
+                title: limitTitle(kind: kind, group: group, model: model),
+                usedPercent: min(max(percent, 0), 100),
+                resetsAt: resetsAt
+            ))
+        }
+        return result.isEmpty ? nil : result
+    }
+
+    static func limitTitle(kind: String, group: String, model: String?) -> String {
+        if kind == "session" || group == "session" { return L("5 小时窗口", "5-hour window") }
+        if kind == "weekly_all" { return L("本周(全部模型)", "This week (all models)") }
+        if let m = model, kind.hasPrefix("weekly") { return L("本周(\(m))", "This week (\(m))") }
+        if kind.hasPrefix("weekly") { return L("本周", "This week") }
+        if let m = model { return m }
+        return kind.isEmpty ? L("额度", "Limit") : kind
     }
 
     static func parseWindows(_ obj: [String: Any]) -> [UsageWindow] {
