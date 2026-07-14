@@ -148,6 +148,12 @@ final class UsageStore {
         AccountsRepository.save(accounts)
     }
 
+    func setPayment(_ account: Account, payment: PaymentMethod?) {
+        guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
+        accounts[idx].payment = payment
+        AccountsRepository.save(accounts)
+    }
+
     // MARK: 菜单栏文案
 
     var menuBarText: String {

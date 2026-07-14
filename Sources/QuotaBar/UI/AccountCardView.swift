@@ -35,6 +35,15 @@ struct AccountCardView: View {
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                     }
+                    if let payment = account.payment {
+                        Label {
+                            Text(payment.summary)
+                        } icon: {
+                            Image(systemName: payment.type.icon)
+                        }
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 Menu {
@@ -47,6 +56,13 @@ struct AccountCardView: View {
                         switch DatePrompt.run(current: account.manualSubscriptionEndsAt) {
                         case .set(let d): store.setManualSubscriptionEnd(account, date: d)
                         case .clear: store.setManualSubscriptionEnd(account, date: nil)
+                        case .cancel: break
+                        }
+                    }
+                    Button(L("设置付款方式…", "Set payment method…")) {
+                        switch PaymentPrompt.run(current: account.payment) {
+                        case .set(let p): store.setPayment(account, payment: p)
+                        case .clear: store.setPayment(account, payment: nil)
                         case .cancel: break
                         }
                     }

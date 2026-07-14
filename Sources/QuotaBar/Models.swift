@@ -23,6 +23,51 @@ enum CredentialSource: Codable, Equatable {
     case claudeCLI(credentialsFilePath: String?)
 }
 
+enum PaymentType: String, Codable, CaseIterable {
+    case applePay
+    case googlePay
+    case creditCard
+
+    var displayName: String {
+        switch self {
+        case .applePay: return "Apple Pay"
+        case .googlePay: return "Google Pay"
+        case .creditCard: return L("信用卡", "Credit card")
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .applePay: return "apple.logo"
+        case .googlePay: return "g.circle.fill"
+        case .creditCard: return "creditcard.fill"
+        }
+    }
+
+    var fieldPlaceholder: String {
+        switch self {
+        case .applePay: return L("Apple ID(邮箱)", "Apple ID (email)")
+        case .googlePay: return L("Google 邮箱", "Google email")
+        case .creditCard: return L("卡号(仅保存后四位)", "Card number (only last 4 stored)")
+        }
+    }
+}
+
+struct PaymentMethod: Codable, Equatable {
+    var type: PaymentType
+    /// Apple ID / Google 邮箱;信用卡只存后四位(绝不保存完整卡号)
+    var detail: String
+
+    var summary: String {
+        switch type {
+        case .creditCard:
+            return detail.isEmpty ? type.displayName : "\(type.displayName) •••• \(detail)"
+        default:
+            return detail.isEmpty ? type.displayName : "\(type.displayName) · \(detail)"
+        }
+    }
+}
+
 struct Account: Codable, Identifiable, Equatable {
     var id: UUID
     var provider: Provider
@@ -32,6 +77,8 @@ struct Account: Codable, Identifiable, Equatable {
     var addedAt: Date
     /// 用户手填的订阅到期日(主要给 Claude 用——接口拿不到)。可选,老 accounts.json 缺此键解码为 nil
     var manualSubscriptionEndsAt: Date? = nil
+    /// 付款方式(Apple Pay/Google Pay/信用卡)。信用卡只存后四位
+    var payment: PaymentMethod? = nil
 }
 
 struct UsageWindow: Equatable {
