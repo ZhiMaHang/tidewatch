@@ -66,18 +66,8 @@ struct AccountCardView: View {
                         case .cancel: break
                         }
                     }
-                    if account.provider == .claude, account.source == .managed {
-                        // 换全新 token 家族:旧家族被限流惩罚/吊销时的自愈通道;保留 UUID 和全部元数据
-                        Button(L("重新登录…", "Re-sign in…")) {
-                            guard let r = ClaudeReloginPrompt.run(label: account.label) else { return }
-                            Task {
-                                if let creds = try? await ClaudeOAuth.exchange(pastedCode: r.code, pkce: r.pkce),
-                                   let data = try? JSONEncoder().encode(creds) {
-                                    KeychainStore.save(data, key: account.id.uuidString)
-                                    await store.refresh(account, force: true)
-                                }
-                            }
-                        }
+                    if canRelogin {
+                        Button(L("重新登录…", "Re-sign in…")) { reloginClaude() }
                     }
                     if account.provider == .claude {
                         Button(L("登录 Claude Design…", "Sign in to Claude Design…")) {
@@ -117,7 +107,17 @@ struct AccountCardView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-            case .needsReauth(let message), .error(let message):
+            case .needsReauth(let message):
+                VStack(alignment: .leading, spacing: 3) {
+                    Label {
+                        Text(message).font(.caption2)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                    reloginButton
+                }
+            case .error(let message):
                 Label {
                     Text(message).font(.caption2)
                 } icon: {
@@ -125,12 +125,17 @@ struct AccountCardView: View {
                         .foregroundStyle(.orange)
                 }
             case .rateLimited:
-                Label {
-                    Text(L("请求被限流,稍后自动重试", "Rate limited — retrying automatically"))
-                        .font(.caption2)
-                } icon: {
-                    Image(systemName: "hourglass")
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Label {
+                        Text(canRelogin
+                             ? L("登录已过期,续期被限流——重新登录可立即恢复", "Sign-in expired and renewal is rate limited — re-sign in to recover now")
+                             : L("请求被限流,稍后自动重试", "Rate limited — retrying automatically"))
+                            .font(.caption2)
+                    } icon: {
+                        Image(systemName: "hourglass")
+                            .foregroundStyle(.orange)
+                    }
+                    reloginButton
                 }
             case .apiChanged:
                 VStack(alignment: .leading, spacing: 3) {
@@ -164,6 +169,35 @@ struct AccountCardView: View {
         }
         .padding(10)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// 只有 managed Claude(应用内登录)有重新登录通道;CLI/文件导入的凭据归各自 CLI 管
+    private var canRelogin: Bool {
+        account.provider == .claude && account.source == .managed
+    }
+
+    /// 换全新 token 家族:旧家族被限流惩罚/吊销时的自愈通道;保留 UUID 和全部元数据。
+    /// 成功后自动强刷,额度立即回来。
+    private func reloginClaude() {
+        guard let r = ClaudeReloginPrompt.run(label: account.label) else { return }
+        Task {
+            if let creds = try? await ClaudeOAuth.exchange(pastedCode: r.code, pkce: r.pkce),
+               let data = try? JSONEncoder().encode(creds) {
+                KeychainStore.save(data, key: account.id.uuidString)
+                await store.refresh(account, force: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var reloginButton: some View {
+        if canRelogin {
+            Button { reloginClaude() } label: {
+                Text(L("重新登录 ›", "Re-sign in ›")).font(.caption2)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.blue)
+        }
     }
 
     private var providerBadge: some View {
