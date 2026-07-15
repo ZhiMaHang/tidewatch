@@ -23,8 +23,6 @@ struct MenuContentView: View {
             footer
         }
         .frame(width: 340)
-        // 语言切换时强制整棵子树重建,让独立 struct 视图(卡片/进度条)也重跑 body 重译
-        .id(store.languageMode)
     }
 
     private var accountList: some View {
@@ -92,11 +90,6 @@ struct MenuContentView: View {
                     Text(L("5 分钟", "5 min")).tag(5)
                     Text(L("15 分钟", "15 min")).tag(15)
                     Text(L("30 分钟", "30 min")).tag(30)
-                }
-                Picker(L("语言", "Language"), selection: Bindable(store).languageMode) {
-                    ForEach(LanguageMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
-                    }
                 }
                 Divider()
                 // 匿名版本检查:只发当前版本号,可随时关(隐私红线要求默认开、可关)

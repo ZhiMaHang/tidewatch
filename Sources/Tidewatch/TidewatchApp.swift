@@ -75,7 +75,8 @@ func runHeadlessCheck() async {
         print(L("(尚未添加账号。先启动 App 添加,或直接测试本机 Codex CLI:--check-codex-cli)",
                 "(No accounts yet. Launch the app to add one, or probe the local Codex CLI: --check-codex-cli)"))
     }
-    for account in accounts {
+    for (i, account) in accounts.enumerated() {
+        if i > 0 { try? await Task.sleep(for: .milliseconds(1500)) } // 同 GUI:错开相邻请求,避免自检自己触发限流
         await checkOne(account)
     }
     if CommandLine.arguments.contains("--check-codex-cli") || accounts.isEmpty {

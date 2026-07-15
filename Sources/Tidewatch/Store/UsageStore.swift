@@ -21,15 +21,6 @@ final class UsageStore {
         }
     }
 
-    /// 界面语言:跟随系统 / 中文 / English。改动即持久化;因 L() 读 AppLanguage.current
-    /// (读同一份持久化),而 UI 观察本属性 → 变更后整树重渲染,文案实时切换。
-    var languageMode: LanguageMode {
-        didSet {
-            guard languageMode != oldValue else { return }
-            UserDefaults.standard.set(languageMode.rawValue, forKey: LanguageMode.storageKey)
-        }
-    }
-
     /// 手动「立即检查更新」的瞬时反馈(自动回路不用它)
     enum ManualCheck: Equatable { case idle, checking, upToDate(String), failed }
     var manualCheck: ManualCheck = .idle
@@ -63,7 +54,6 @@ final class UsageStore {
         refreshIntervalMinutes = stored >= 3 ? stored : 5
         // 默认开:老用户/首启时该 key 不存在(nil)也视为开。didSet 在 init 内不触发,不会提前启动 loop。
         updateCheckEnabled = UserDefaults.standard.object(forKey: Keys.updateCheckEnabled) as? Bool ?? true
-        languageMode = LanguageMode.stored
         accounts = AccountsRepository.load()
         if let data = UserDefaults.standard.data(forKey: "designFirstSeen"),
            let d = try? JSONDecoder().decode([String: Date].self, from: data) {
@@ -165,11 +155,19 @@ final class UsageStore {
     // MARK: 刷新
 
     func refreshAll(force: Bool = false) async {
-        let list = accounts
+        // 同一 provider 的账号共用同一 host + 同一 client_id(Claude 尤甚:所有账号都用 Claude Code 的
+        // client_id),并发请求会触发端点按 IP/client 的突发限流(429,多个账号一起挂)。所以:
+        // 同 provider 内串行 + 相邻请求错开一点;不同 provider 之间仍并发(不同 host,互不影响)。
+        let byProvider = Dictionary(grouping: accounts, by: { $0.provider })
         await withTaskGroup(of: Void.self) { group in
-            for account in list {
+            for (_, providerAccounts) in byProvider {
                 group.addTask { [weak self] in
-                    await self?.refresh(account, force: force)
+                    for (i, account) in providerAccounts.enumerated() {
+                        // 同 provider 相邻请求错开 1.5s:多账号共用同一 client_id/IP,连续快打会踩端点短窗口限流。
+                        // 每 30 分钟一轮,即便 4 个 Claude 摊到 ~4.5s 也可忽略。
+                        if i > 0 { try? await Task.sleep(for: .milliseconds(1500)) }
+                        await self?.refresh(account, force: force)
+                    }
                 }
             }
         }
@@ -213,6 +211,12 @@ final class UsageStore {
             }
         } catch QuotaError.unauthorized {
             states[account.id] = .needsReauth(L("凭据已失效,请重新登录", "Credentials expired, please sign in again"))
+        } catch QuotaError.http(429, _) {
+            // 瞬时限流(短时高频/并发突发):有上次成功的快照就留着别覆盖,下轮自动重试;
+            // 只有从没成功过(无旧数据)才落到限流态,不然会把已显示的额度抹成错误。
+            if states[account.id]?.snapshot == nil {
+                states[account.id] = .rateLimited
+            }
         } catch QuotaError.parse {
             // 解析失败=接口字段多半变了,进降级态(引导看新版),而不是当成用户侧错误
             states[account.id] = .apiChanged

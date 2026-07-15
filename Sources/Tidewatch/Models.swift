@@ -116,6 +116,8 @@ enum AccountState: Equatable {
     case error(String)
     /// 响应解析失败:多半是官方接口改了字段(不是用户的问题),提示看是否有新版
     case apiChanged
+    /// 被端点限流(HTTP 429),瞬时状态,下轮自动重试;仅在没有旧快照可显示时才落到这个态
+    case rateLimited
 
     var snapshot: UsageSnapshot? {
         if case .loaded(let s) = self { return s }

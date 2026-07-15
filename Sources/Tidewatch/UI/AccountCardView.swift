@@ -111,6 +111,14 @@ struct AccountCardView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                 }
+            case .rateLimited:
+                Label {
+                    Text(L("请求被限流,稍后自动重试", "Rate limited — retrying automatically"))
+                        .font(.caption2)
+                } icon: {
+                    Image(systemName: "hourglass")
+                        .foregroundStyle(.secondary)
+                }
             case .apiChanged:
                 VStack(alignment: .leading, spacing: 3) {
                     Label {

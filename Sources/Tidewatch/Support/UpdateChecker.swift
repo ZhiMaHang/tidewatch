@@ -22,13 +22,12 @@ struct UpdateInfo: Equatable {
     let notesEn: String?
     let url: URL?
 
-    /// 按运行时语言取 release notes,缺一种就回退另一种(latest.json 里的文案由服务端给,双语可选)
+    /// release notes:界面固定中文,取中文文案;缺中文才回退英文(容忍服务端只给一种)
     var localizedNotes: String? {
         let zh = notesZh?.trimmingCharacters(in: .whitespacesAndNewlines)
         let en = notesEn?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let (primary, fallback) = AppLanguage.current == .zh ? (zh, en) : (en, zh)
-        if let p = primary, !p.isEmpty { return p }
-        if let f = fallback, !f.isEmpty { return f }
+        if let p = zh, !p.isEmpty { return p }
+        if let f = en, !f.isEmpty { return f }
         return nil
     }
 }
