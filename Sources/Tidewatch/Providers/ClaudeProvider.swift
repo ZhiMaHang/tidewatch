@@ -210,7 +210,10 @@ enum ClaudeProvider {
                 key: "limit-\(i)-\(kind)-\(model ?? "")",
                 title: limitTitle(kind: kind, group: group, model: model),
                 usedPercent: min(max(percent, 0), 100),
-                resetsAt: resetsAt
+                resetsAt: resetsAt,
+                // 账号级周窗 = weekly_all;防御:无模型标注的裸 weekly 也算(排除按模型细分的 scoped)
+                isAccountWeekly: kind == "weekly_all"
+                    || (model == nil && kind.hasPrefix("weekly") && kind != "weekly_scoped")
             ))
         }
         return result.isEmpty ? nil : result
@@ -243,7 +246,8 @@ enum ClaudeProvider {
                 key: key,
                 title: windowTitles[key] ?? key,
                 usedPercent: min(max(utilization, 0), 100),
-                resetsAt: resetsAt
+                resetsAt: resetsAt,
+                isAccountWeekly: key == "seven_day" // 扁平键里的账号级周窗(细分键如 seven_day_opus 不算)
             ))
         }
         return result

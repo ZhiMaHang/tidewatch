@@ -1,14 +1,20 @@
 import Foundation
 import Observation
 
-/// 账号列表排序模式(rawValue 持久化到 UserDefaults)
+/// 账号列表排序模式(rawValue 持久化到 UserDefaults)。
+/// 旧模式 added/resetTime 已删除,init 恢复时旧值一律迁移为 .subscriptionEnd。
 enum AccountSortMode: String, CaseIterable {
-    /// 默认:按添加顺序
-    case added
-    /// 按重置时间降序:重置时刻离现在最远的排第一。键取各窗口 resetsAt 的最大值,
-    /// 故长周期窗口(周/月)支配排序,带月窗的提供方(如 GLM)混排时天然靠前——
-    /// 这是字面「最高重置」语义,不等于「额度最新鲜」
-    case resetTime
+    /// 默认:按订阅到期时间升序——到期最早的排第一(最紧迫的续费在最上)。
+    /// 键来源优先级:用户手填 manualSubscriptionEndsAt 优先;否则用快照的
+    /// subscriptionEndsAt(目前只有 Codex 能从 id_token 拿到;Claude/GLM 为 nil)。
+    /// 两处都无键则沉底。
+    case subscriptionEnd
+    /// 按周额度重置时间升序——最早重置的排第一。
+    /// 键 = 账号级周窗(UsageWindow.isAccountWeekly)的 resetsAt;无周窗/无快照沉底。
+    case weeklyReset
+    /// 按周额度已用百分比升序——用得最少的排第一。
+    /// 键 = 账号级周窗的 usedPercent;无周窗/无快照沉底。
+    case weeklyUsed
 }
 
 @MainActor
@@ -37,32 +43,82 @@ final class UsageStore {
         }
     }
 
-    /// 各账号末次成功快照的排序键(所有窗口 resetsAt 最大值)。排序键与展示态解耦:
-    /// 刷新瞬时失败会覆盖 states 丢掉快照(卡片要如实显示错误态),若排序键跟着消失,
-    /// resetTime 模式下账号会在面板开着时沉底、下轮成功再跳回;用末次成功值钉住位置。
-    private var lastResetKey: [UUID: Date] = [:]
+    /// 各账号末次成功快照里的排序键(可扩展:后续排序模式往里加字段即可)。
+    struct CachedSortKeys {
+        /// 快照的订阅到期日(目前仅 Codex 有)
+        var subscriptionEndsAt: Date?
+        /// 账号级周窗(UsageWindow.isAccountWeekly)的重置时间
+        var weeklyResetsAt: Date?
+        /// 账号级周窗的已用百分比
+        var weeklyUsedPercent: Double?
 
-    /// 面板列表的实际展示顺序。读了 accounts/states/accountSortMode/lastResetKey 四个可观察属性,
-    /// 快照刷新(states 变化)后 @Observable 会驱动列表自动重排。
-    var sortedAccounts: [Account] {
-        guard accountSortMode == .resetTime else { return accounts }
-        var resets: [UUID: Date] = [:]
-        for account in accounts {
-            if let d = states[account.id]?.snapshot?.windows.compactMap(\.resetsAt).max() ?? lastResetKey[account.id] {
-                resets[account.id] = d
-            }
+        /// 从一份成功快照整体重建全部排序键。
+        /// 账号级周窗设计上每账号至多一个;这里对意外出现多个的情况做防御:
+        /// resetsAt 取最早、usedPercent 取最大(各取最保守的一侧)。
+        init(snapshot: UsageSnapshot) {
+            subscriptionEndsAt = snapshot.subscriptionEndsAt
+            let weekly = snapshot.windows.filter(\.isAccountWeekly)
+            weeklyResetsAt = weekly.compactMap(\.resetsAt).min()
+            weeklyUsedPercent = weekly.map(\.usedPercent).max()
         }
-        return Self.sortedByReset(accounts, resets: resets)
     }
 
-    /// 排序键 = 该账号所有窗口 resetsAt 的最大值(现值优先,刷新失败期间由 lastResetKey
-    /// 兜底为末次成功值),降序(最远的排第一);
-    /// 无键(无快照或全无 resetsAt)排最后;同键及无键之间保持传入顺序(稳定)。
+    /// 排序键缓存,与展示态解耦:刷新瞬时失败会覆盖 states 丢掉快照(卡片要如实显示
+    /// 错误态),若排序键跟着消失,账号会在面板开着时沉底、下轮成功再跳回;
+    /// 用末次成功快照的键钉住位置。markLoaded 落快照时同步,removeAccount 清理。
+    private var cachedSortKeys: [UUID: CachedSortKeys] = [:]
+
+    /// 面板列表的实际展示顺序。读了 accounts/states/accountSortMode/cachedSortKeys 四个可观察属性,
+    /// 快照刷新(states 变化)后 @Observable 会驱动列表自动重排。
+    var sortedAccounts: [Account] {
+        // 现值优先:有快照就按当前快照现算排序键;刷新瞬时失败(快照被错误态覆盖)期间
+        // 由 cachedSortKeys 兜底为末次成功值,钉住位置不跳动。
+        func liveOrCachedKeys(_ id: UUID) -> CachedSortKeys? {
+            if let snapshot = states[id]?.snapshot { return CachedSortKeys(snapshot: snapshot) }
+            return cachedSortKeys[id]
+        }
+        switch accountSortMode {
+        case .subscriptionEnd:
+            // 键优先级:手填 manualSubscriptionEndsAt > 快照 subscriptionEndsAt(仅 Codex 的快照有此值)
+            var keys: [UUID: Date] = [:]
+            for account in accounts {
+                if let d = account.manualSubscriptionEndsAt
+                    ?? liveOrCachedKeys(account.id)?.subscriptionEndsAt {
+                    keys[account.id] = d
+                }
+            }
+            // 升序:到期最早的排第一(最紧迫的续费在最上)
+            return Self.stableSorted(accounts, keys: keys, ascending: true)
+        case .weeklyReset:
+            // 键 = 账号级周窗 resetsAt;升序:最早重置的排第一
+            var keys: [UUID: Date] = [:]
+            for account in accounts {
+                if let d = liveOrCachedKeys(account.id)?.weeklyResetsAt {
+                    keys[account.id] = d
+                }
+            }
+            return Self.stableSorted(accounts, keys: keys, ascending: true)
+        case .weeklyUsed:
+            // 键 = 账号级周窗 usedPercent;升序:用得最少的排第一
+            var keys: [UUID: Double] = [:]
+            for account in accounts {
+                if let p = liveOrCachedKeys(account.id)?.weeklyUsedPercent {
+                    keys[account.id] = p
+                }
+            }
+            return Self.stableSorted(accounts, keys: keys, ascending: true)
+        }
+    }
+
+    /// 通用稳定排序:按给定键排(ascending=true 升序/false 降序);
+    /// 无键沉底;同键及无键之间保持传入顺序(稳定)。
     /// 纯函数(nonisolated + 显式传键),便于脱离 MainActor 单测。
-    nonisolated static func sortedByReset(_ accounts: [Account], resets: [UUID: Date]) -> [Account] {
+    nonisolated static func stableSorted<Key: Comparable>(_ accounts: [Account], keys: [UUID: Key], ascending: Bool) -> [Account] {
         accounts.enumerated().sorted { a, b in
-            switch (resets[a.element.id], resets[b.element.id]) {
-            case let (l?, r?): return l == r ? a.offset < b.offset : l > r
+            switch (keys[a.element.id], keys[b.element.id]) {
+            case let (l?, r?):
+                if l == r { return a.offset < b.offset }
+                return ascending ? l < r : l > r
             case (.some, .none): return true
             case (.none, .some): return false
             case (.none, .none): return a.offset < b.offset
@@ -105,8 +161,10 @@ final class UsageStore {
     init() {
         let stored = UserDefaults.standard.integer(forKey: "refreshIntervalMinutes")
         refreshIntervalMinutes = stored >= 3 ? stored : 5
+        // 迁移:旧值 "added"/"resetTime"/缺失/未知一律落到新默认 .subscriptionEnd(不回写,
+        // didSet 的持久化机制照旧,用户下次切换才写)。
         accountSortMode = UserDefaults.standard.string(forKey: "accountSortMode")
-            .flatMap(AccountSortMode.init(rawValue:)) ?? .added
+            .flatMap(AccountSortMode.init(rawValue:)) ?? .subscriptionEnd
         // 默认开:老用户/首启时该 key 不存在(nil)也视为开。didSet 在 init 内不触发,不会提前启动 loop。
         updateCheckEnabled = UserDefaults.standard.object(forKey: Keys.updateCheckEnabled) as? Bool ?? true
         accounts = AccountsRepository.load()
@@ -248,10 +306,10 @@ final class UsageStore {
         inFlight[account.id] = nil
     }
 
-    /// 落地成功快照:更新展示态,并同步排序键缓存(见 lastResetKey)
+    /// 落地成功快照:更新展示态,并同步排序键缓存(见 cachedSortKeys)
     private func markLoaded(_ id: UUID, _ snapshot: UsageSnapshot) {
         states[id] = .loaded(snapshot)
-        lastResetKey[id] = snapshot.windows.compactMap(\.resetsAt).max()
+        cachedSortKeys[id] = CachedSortKeys(snapshot: snapshot)
     }
 
     private func performRefresh(_ account: Account) async {
@@ -331,7 +389,7 @@ final class UsageStore {
     func removeAccount(_ account: Account) {
         accounts.removeAll { $0.id == account.id }
         states[account.id] = nil
-        lastResetKey[account.id] = nil
+        cachedSortKeys[account.id] = nil
         designProjects[account.id] = nil
         designAvailable[account.id] = nil
         switch account.source {
