@@ -66,6 +66,19 @@ struct AccountCardView: View {
                         case .cancel: break
                         }
                     }
+                    if account.provider == .claude, account.source == .managed {
+                        // 换全新 token 家族:旧家族被限流惩罚/吊销时的自愈通道;保留 UUID 和全部元数据
+                        Button(L("重新登录…", "Re-sign in…")) {
+                            guard let r = ClaudeReloginPrompt.run(label: account.label) else { return }
+                            Task {
+                                if let creds = try? await ClaudeOAuth.exchange(pastedCode: r.code, pkce: r.pkce),
+                                   let data = try? JSONEncoder().encode(creds) {
+                                    KeychainStore.save(data, key: account.id.uuidString)
+                                    await store.refresh(account, force: true)
+                                }
+                            }
+                        }
+                    }
                     if account.provider == .claude {
                         Button(L("登录 Claude Design…", "Sign in to Claude Design…")) {
                             guard let r = DesignLoginPrompt.run() else { return }
