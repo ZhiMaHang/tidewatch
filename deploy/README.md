@@ -41,5 +41,9 @@ scp deploy/latest.json zmh:/opt/1panel/www/sites/zhimahang.com/index/tidewatch/l
 1. 出好新 `.dmg`,传 GitHub Release(或承接页)。
 2. 把 `deploy/latest.json` 的 `latest` 改成新版本号,写好 `notes`/`notes_en`,`url` 指向下载页。
 3. scp 覆盖上去即可。旧版本用户下次检查(启动或次日)就会在面板顶部看到一条克制的「有新版」横幅。
+4. **同步官网落地页的烘焙版本号**(offical 仓 `tidewatch/index.html`):页面版本文案会从
+   `latest.json` 动态拉取(两处 `data-tw-version` span),但 **JSON-LD 的 `softwareVersion`
+   与 span 内的兜底文案是写死的**——发版时顺手把这三处也改成新版本号再 scp,否则
+   结构化数据会与实际版本漂移(2026-07-15 review 发现)。
 
 > 度量:OpenResty 访问日志按 `?v=<版本>` 分段,即得「周活版本分布」+ 热修后重下载峰值(见发行手册 §8)。
