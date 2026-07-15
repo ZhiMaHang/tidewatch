@@ -34,7 +34,7 @@ PLIST
 # 优先用稳定 dev 身份签名(scripts/dev-cert.sh 生成),重构建不触发钥匙串重新授权;
 # 没有则回退 ad-hoc(签名标识随构建变,每次重构建会重弹授权框)
 IDENTITY="Tidewatch Dev"
-if security find-identity -v -p codesigning 2>/dev/null | grep -Fq "\"$IDENTITY\""; then
+if security find-identity -v -p codesigning 2>/dev/null | grep -F "\"$IDENTITY\"" >/dev/null; then
   codesign --force --sign "$IDENTITY" "$APP"
   SIGN_NOTE="签名: $IDENTITY(稳定 dev 身份)"
 else

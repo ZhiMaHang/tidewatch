@@ -17,7 +17,8 @@ KEYCHAIN="$(security login-keychain -d user 2>/dev/null | sed 's/^[[:space:]]*"/
 [ -n "$KEYCHAIN" ] || KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
 # 已有可用身份 → 幂等退出
-if security find-identity -v -p codesigning 2>/dev/null | grep -Fq "\"$IDENTITY\""; then
+# grep 不用 -q:pipefail 下 -q 提前退出会让上游 SIGPIPE、管道整体非零,把"存在"误判为"不存在"
+if security find-identity -v -p codesigning 2>/dev/null | grep -F "\"$IDENTITY\"" >/dev/null; then
   echo "✅ 签名身份「$IDENTITY」已存在且可用,无需重复创建。"
   exit 0
 fi
@@ -30,8 +31,9 @@ if security find-certificate -c "$IDENTITY" "$KEYCHAIN" >/dev/null 2>&1; then
    1. 打开「钥匙串访问」→ 左侧「登录」→ 分类「证书」,找到 Tidewatch Dev;
    2. 双击 → 展开「信任」→「代码签名」选「始终信任」→ 关窗口时输一次登录密码。
    完成后重跑本脚本确认(应显示"已存在且可用")。
-   若补信任后仍不可用(如私钥缺失),删掉旧证书重来:
-     security delete-certificate -c "Tidewatch Dev"
+   若补信任后仍不可用(如私钥缺失),删掉旧身份重来(delete-identity 连配对私钥一起删,
+   用 delete-certificate 会留下孤儿私钥):
+     security delete-identity -c "Tidewatch Dev"
 EOF
   exit 1
 fi
@@ -60,14 +62,15 @@ CONF
 /usr/bin/openssl pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
   -name "$IDENTITY" -passout pass:tidewatch-dev -out "$TMP/dev.p12"
 
-echo "▸ 导入 login 钥匙串(私钥授权给 codesign)…"
+echo "▸ 导入 login 钥匙串(私钥只授权给 codesign)…"
+# 私钥 ACL 只给 codesign:多授权 /usr/bin/security 会让本机任意进程可免弹框导出私钥
 security import "$TMP/dev.p12" -k "$KEYCHAIN" -f pkcs12 -P tidewatch-dev \
-  -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+  -T /usr/bin/codesign >/dev/null
 
 echo "▸ 设置证书信任(仅代码签名用途;如弹出密码框请输入登录密码确认)…"
 security add-trusted-cert -p basic -p codeSign -r trustRoot -k "$KEYCHAIN" "$TMP/cert.pem" || true
 
-if security find-identity -v -p codesigning 2>/dev/null | grep -Fq "\"$IDENTITY\""; then
+if security find-identity -v -p codesigning 2>/dev/null | grep -F "\"$IDENTITY\"" >/dev/null; then
   echo "✅ 已创建可用签名身份「$IDENTITY」。之后 ./scripts/build-app.sh 会自动用它签名;"
   echo "   首次构建/首次运行还会各弹一次授权(点「始终允许」),此后重构建不再弹。"
 else

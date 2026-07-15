@@ -211,9 +211,9 @@ enum ClaudeProvider {
                 title: limitTitle(kind: kind, group: group, model: model),
                 usedPercent: min(max(percent, 0), 100),
                 resetsAt: resetsAt,
-                // 账号级周窗 = weekly_all;防御:无模型标注的裸 weekly 也算(排除按模型细分的 scoped)
-                isAccountWeekly: kind == "weekly_all"
-                    || (model == nil && kind.hasPrefix("weekly") && kind != "weekly_scoped")
+                // 账号级周窗 = weekly_all;兜底只认裸 "weekly"——功能域细分周窗
+                // (类比扁平键 seven_day_oauth_apps/routines)同样无模型标注,宽前缀匹配会误标
+                isAccountWeekly: kind == "weekly_all" || (model == nil && kind == "weekly")
             ))
         }
         return result.isEmpty ? nil : result
