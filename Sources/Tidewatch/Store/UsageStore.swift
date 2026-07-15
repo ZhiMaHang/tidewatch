@@ -5,7 +5,9 @@ import Observation
 enum AccountSortMode: String, CaseIterable {
     /// 默认:按添加顺序
     case added
-    /// 按重置时间降序:重置时刻离现在最远(刚重置完、额度最新鲜)的排第一
+    /// 按重置时间降序:重置时刻离现在最远的排第一。键取各窗口 resetsAt 的最大值,
+    /// 故长周期窗口(周/月)支配排序,带月窗的提供方(如 GLM)混排时天然靠前——
+    /// 这是字面「最高重置」语义,不等于「额度最新鲜」
     case resetTime
 }
 
@@ -35,13 +37,18 @@ final class UsageStore {
         }
     }
 
+    /// 各账号末次成功快照的排序键(所有窗口 resetsAt 最大值)。排序键与展示态解耦:
+    /// 刷新瞬时失败会覆盖 states 丢掉快照(卡片要如实显示错误态),若排序键跟着消失,
+    /// resetTime 模式下账号会在面板开着时沉底、下轮成功再跳回;用末次成功值钉住位置。
+    private var lastResetKey: [UUID: Date] = [:]
+
     /// 面板列表的实际展示顺序。读了 accounts/states/accountSortMode 三个可观察属性,
     /// 快照刷新(states 变化)后 @Observable 会驱动列表自动重排。
     var sortedAccounts: [Account] {
         guard accountSortMode == .resetTime else { return accounts }
         var resets: [UUID: Date] = [:]
         for account in accounts {
-            if let d = states[account.id]?.snapshot?.windows.compactMap(\.resetsAt).max() {
+            if let d = states[account.id]?.snapshot?.windows.compactMap(\.resetsAt).max() ?? lastResetKey[account.id] {
                 resets[account.id] = d
             }
         }
@@ -240,6 +247,12 @@ final class UsageStore {
         inFlight[account.id] = nil
     }
 
+    /// 落地成功快照:更新展示态,并同步排序键缓存(见 lastResetKey)
+    private func markLoaded(_ id: UUID, _ snapshot: UsageSnapshot) {
+        states[id] = .loaded(snapshot)
+        lastResetKey[id] = snapshot.windows.compactMap(\.resetsAt).max()
+    }
+
     private func performRefresh(_ account: Account) async {
         if states[account.id]?.snapshot == nil {
             states[account.id] = .loading
@@ -248,15 +261,15 @@ final class UsageStore {
             switch account.provider {
             case .claude:
                 let (snapshot, _) = try await ClaudeProvider.fetchUsage(for: account)
-                states[account.id] = .loaded(snapshot)
+                markLoaded(account.id, snapshot)
                 Task { [weak self] in await self?.refreshDesign(account) } // 有 design 登录才拉,best-effort
             case .codex:
                 let (snapshot, tokens) = try await CodexProvider.fetchUsage(for: account)
-                states[account.id] = .loaded(snapshot)
+                markLoaded(account.id, snapshot)
                 updateLabelIfNeeded(account, email: snapshot.email ?? tokens.id_token.flatMap(CodexProvider.email(fromIDToken:)), plan: snapshot.planType)
             case .glm:
                 let snapshot = try await GLMProvider.fetchUsage(for: account)
-                states[account.id] = .loaded(snapshot)
+                markLoaded(account.id, snapshot)
                 updateLabelIfNeeded(account, email: nil, plan: snapshot.planType)
             }
             backoff429[account.id] = nil // 成功即清退避
@@ -317,6 +330,7 @@ final class UsageStore {
     func removeAccount(_ account: Account) {
         accounts.removeAll { $0.id == account.id }
         states[account.id] = nil
+        lastResetKey[account.id] = nil
         designProjects[account.id] = nil
         designAvailable[account.id] = nil
         switch account.source {
