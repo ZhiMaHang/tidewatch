@@ -9,6 +9,12 @@ enum AccountSortMode: String, CaseIterable {
     /// subscriptionEndsAt(目前只有 Codex 能从 id_token 拿到;Claude/GLM 为 nil)。
     /// 两处都无键则沉底。
     case subscriptionEnd
+    /// 按周额度重置时间升序——最早重置的排第一。
+    /// 键 = 账号级周窗(UsageWindow.isAccountWeekly)的 resetsAt;无周窗/无快照沉底。
+    case weeklyReset
+    /// 按周额度已用百分比升序——用得最少的排第一。
+    /// 键 = 账号级周窗的 usedPercent;无周窗/无快照沉底。
+    case weeklyUsed
 }
 
 @MainActor
@@ -41,6 +47,20 @@ final class UsageStore {
     struct CachedSortKeys {
         /// 快照的订阅到期日(目前仅 Codex 有)
         var subscriptionEndsAt: Date?
+        /// 账号级周窗(UsageWindow.isAccountWeekly)的重置时间
+        var weeklyResetsAt: Date?
+        /// 账号级周窗的已用百分比
+        var weeklyUsedPercent: Double?
+
+        /// 从一份成功快照整体重建全部排序键。
+        /// 账号级周窗设计上每账号至多一个;这里对意外出现多个的情况做防御:
+        /// resetsAt 取最早、usedPercent 取最大(各取最保守的一侧)。
+        init(snapshot: UsageSnapshot) {
+            subscriptionEndsAt = snapshot.subscriptionEndsAt
+            let weekly = snapshot.windows.filter(\.isAccountWeekly)
+            weeklyResetsAt = weekly.compactMap(\.resetsAt).min()
+            weeklyUsedPercent = weekly.map(\.usedPercent).max()
+        }
     }
 
     /// 排序键缓存,与展示态解耦:刷新瞬时失败会覆盖 states 丢掉快照(卡片要如实显示
@@ -51,19 +71,41 @@ final class UsageStore {
     /// 面板列表的实际展示顺序。读了 accounts/states/accountSortMode/cachedSortKeys 四个可观察属性,
     /// 快照刷新(states 变化)后 @Observable 会驱动列表自动重排。
     var sortedAccounts: [Account] {
+        // 现值优先:有快照就按当前快照现算排序键;刷新瞬时失败(快照被错误态覆盖)期间
+        // 由 cachedSortKeys 兜底为末次成功值,钉住位置不跳动。
+        func liveOrCachedKeys(_ id: UUID) -> CachedSortKeys? {
+            if let snapshot = states[id]?.snapshot { return CachedSortKeys(snapshot: snapshot) }
+            return cachedSortKeys[id]
+        }
         switch accountSortMode {
         case .subscriptionEnd:
-            // 键优先级:手填 manualSubscriptionEndsAt > 快照 subscriptionEndsAt(现值优先,
-            // 刷新失败期间由 cachedSortKeys 兜底为末次成功值;仅 Codex 的快照有此值)。
+            // 键优先级:手填 manualSubscriptionEndsAt > 快照 subscriptionEndsAt(仅 Codex 的快照有此值)
             var keys: [UUID: Date] = [:]
             for account in accounts {
                 if let d = account.manualSubscriptionEndsAt
-                    ?? states[account.id]?.snapshot?.subscriptionEndsAt
-                    ?? cachedSortKeys[account.id]?.subscriptionEndsAt {
+                    ?? liveOrCachedKeys(account.id)?.subscriptionEndsAt {
                     keys[account.id] = d
                 }
             }
             // 升序:到期最早的排第一(最紧迫的续费在最上)
+            return Self.stableSorted(accounts, keys: keys, ascending: true)
+        case .weeklyReset:
+            // 键 = 账号级周窗 resetsAt;升序:最早重置的排第一
+            var keys: [UUID: Date] = [:]
+            for account in accounts {
+                if let d = liveOrCachedKeys(account.id)?.weeklyResetsAt {
+                    keys[account.id] = d
+                }
+            }
+            return Self.stableSorted(accounts, keys: keys, ascending: true)
+        case .weeklyUsed:
+            // 键 = 账号级周窗 usedPercent;升序:用得最少的排第一
+            var keys: [UUID: Double] = [:]
+            for account in accounts {
+                if let p = liveOrCachedKeys(account.id)?.weeklyUsedPercent {
+                    keys[account.id] = p
+                }
+            }
             return Self.stableSorted(accounts, keys: keys, ascending: true)
         }
     }
@@ -71,7 +113,7 @@ final class UsageStore {
     /// 通用稳定排序:按给定键排(ascending=true 升序/false 降序);
     /// 无键沉底;同键及无键之间保持传入顺序(稳定)。
     /// 纯函数(nonisolated + 显式传键),便于脱离 MainActor 单测。
-    nonisolated static func stableSorted(_ accounts: [Account], keys: [UUID: Date], ascending: Bool) -> [Account] {
+    nonisolated static func stableSorted<Key: Comparable>(_ accounts: [Account], keys: [UUID: Key], ascending: Bool) -> [Account] {
         accounts.enumerated().sorted { a, b in
             switch (keys[a.element.id], keys[b.element.id]) {
             case let (l?, r?):
@@ -267,7 +309,7 @@ final class UsageStore {
     /// 落地成功快照:更新展示态,并同步排序键缓存(见 cachedSortKeys)
     private func markLoaded(_ id: UUID, _ snapshot: UsageSnapshot) {
         states[id] = .loaded(snapshot)
-        cachedSortKeys[id] = CachedSortKeys(subscriptionEndsAt: snapshot.subscriptionEndsAt)
+        cachedSortKeys[id] = CachedSortKeys(snapshot: snapshot)
     }
 
     private func performRefresh(_ account: Account) async {

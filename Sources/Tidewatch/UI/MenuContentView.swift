@@ -93,6 +93,8 @@ struct MenuContentView: View {
                 }
                 Picker(L("账号排序", "Sort accounts"), selection: Bindable(store).accountSortMode) {
                     Text(L("按订阅到期", "By subscription end")).tag(AccountSortMode.subscriptionEnd)
+                    Text(L("按周额度重置", "By weekly reset")).tag(AccountSortMode.weeklyReset)
+                    Text(L("按周额度使用", "By weekly usage")).tag(AccountSortMode.weeklyUsed)
                 }
                 Divider()
                 // 匿名版本检查:只发当前版本号,可随时关(隐私红线要求默认开、可关)
