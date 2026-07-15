@@ -31,6 +31,16 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-codesign --force --sign - "$APP"
+# 优先用稳定 dev 身份签名(scripts/dev-cert.sh 生成),重构建不触发钥匙串重新授权;
+# 没有则回退 ad-hoc(签名标识随构建变,每次重构建会重弹授权框)
+IDENTITY="Tidewatch Dev"
+if security find-identity -v -p codesigning 2>/dev/null | grep -Fq "\"$IDENTITY\""; then
+  codesign --force --sign "$IDENTITY" "$APP"
+  SIGN_NOTE="签名: $IDENTITY(稳定 dev 身份)"
+else
+  codesign --force --sign - "$APP"
+  SIGN_NOTE="签名: ad-hoc——每次重构建会重弹钥匙串授权;跑一次 ./scripts/dev-cert.sh 可消除"
+fi
 echo "✅ 已生成 $APP"
+echo "   $SIGN_NOTE"
 echo "   安装: cp -R $APP /Applications/"
