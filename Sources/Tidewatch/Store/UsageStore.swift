@@ -46,6 +46,10 @@ final class UsageStore {
     private var refreshLoop: Task<Void, Never>?
     private var updateLoop: Task<Void, Never>?
     private var inFlight: [UUID: Task<Void, Never>] = [:]
+    /// 429 指数退避:账号 → (下次允许自动刷新的时间, 连续 429 次数)。
+    /// token 刷新端点(platform.claude.com)对 client_id/IP 限流有惩罚期,429 后继续按周期戳它
+    /// 会让惩罚自我维持;退避 15m→30m→1h→2h 封顶,成功一次即清零。手动强刷(force)可跳过。
+    private var backoff429: [UUID: (until: Date, streak: Int)] = [:]
     /// 是否有 design 凭据的缓存(nil=未判定),避免每轮刷新做钥匙串读
     private var designAvailable: [UUID: Bool] = [:]
 
@@ -184,6 +188,9 @@ final class UsageStore {
         if !force, case .needsReauth = states[account.id] ?? .idle {
             return
         }
+        if !force, let b = backoff429[account.id], b.until > Date() {
+            return // 429 退避期内不自动重试,让端点的限流惩罚自然消退
+        }
         let task = Task { await self.performRefresh(account) }
         inFlight[account.id] = task
         await task.value
@@ -209,11 +216,15 @@ final class UsageStore {
                 states[account.id] = .loaded(snapshot)
                 updateLabelIfNeeded(account, email: nil, plan: snapshot.planType)
             }
+            backoff429[account.id] = nil // 成功即清退避
         } catch QuotaError.unauthorized {
             states[account.id] = .needsReauth(L("凭据已失效,请重新登录", "Credentials expired, please sign in again"))
         } catch QuotaError.http(429, _) {
-            // 瞬时限流(短时高频/并发突发):有上次成功的快照就留着别覆盖,下轮自动重试;
-            // 只有从没成功过(无旧数据)才落到限流态,不然会把已显示的额度抹成错误。
+            // 限流:进指数退避(15m→30m→1h→2h 封顶),期间自动回路不再戳端点;
+            // 有上次成功的快照就留着别覆盖,只有从没成功过(无旧数据)才落到限流态。
+            let streak = (backoff429[account.id]?.streak ?? 0) + 1
+            let delay = min(900 * pow(2, Double(streak - 1)), 7200)
+            backoff429[account.id] = (Date().addingTimeInterval(delay), streak)
             if states[account.id]?.snapshot == nil {
                 states[account.id] = .rateLimited
             }

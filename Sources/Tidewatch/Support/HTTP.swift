@@ -46,6 +46,14 @@ enum HTTP {
         }
     }
 
+    /// 非 2xx 时的错误正文:带上端点 host(区分 usage/token 端点)与 Retry-After(限流剩余时长),便于诊断
+    static func errorBody(_ http: HTTPURLResponse, _ data: Data) -> String {
+        var prefix = "[\(http.url?.host ?? "?")\(http.url?.path ?? "")"
+        if let ra = http.value(forHTTPHeaderField: "Retry-After") { prefix += " Retry-After:\(ra)s" }
+        prefix += "] "
+        return prefix + (String(data: data, encoding: .utf8) ?? "")
+    }
+
     static func getJSON(url: URL, headers: [String: String]) async throws -> Data {
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
@@ -55,7 +63,7 @@ enum HTTP {
         // 只有 401 才代表凭据失效;403 可能是 WAF/权限/套餐问题,绝不能触发 refresh token 轮转
         if http.statusCode == 401 { throw QuotaError.unauthorized }
         guard (200..<300).contains(http.statusCode) else {
-            throw QuotaError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+            throw QuotaError.http(http.statusCode, errorBody(http, data))
         }
         return data
     }
@@ -75,7 +83,7 @@ enum HTTP {
         // 只有 401 才代表凭据失效;403 可能是 WAF/权限/套餐问题,绝不能触发 refresh token 轮转
         if http.statusCode == 401 { throw QuotaError.unauthorized }
         guard (200..<300).contains(http.statusCode) else {
-            throw QuotaError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+            throw QuotaError.http(http.statusCode, errorBody(http, data))
         }
         return data
     }
@@ -93,7 +101,7 @@ enum HTTP {
         // 只有 401 才代表凭据失效;403 可能是 WAF/权限/套餐问题,绝不能触发 refresh token 轮转
         if http.statusCode == 401 { throw QuotaError.unauthorized }
         guard (200..<300).contains(http.statusCode) else {
-            throw QuotaError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+            throw QuotaError.http(http.statusCode, errorBody(http, data))
         }
         return data
     }
