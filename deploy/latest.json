@@ -1,6 +1,6 @@
 {
-  "latest": "0.1.4",
-  "notes": "新增:账号列表支持「按重置时间」排序——右上角「⋯」菜单里选择后,重置时间最远的账号排到最前,选择会被记住;切回「默认顺序」即恢复添加顺序。刷新偶发失败时列表位置保持稳定,不会上下跳动。",
-  "notes_en": "New: sort accounts by reset time — pick \"By reset time\" in the \"⋯\" menu to put the account with the furthest reset first; your choice is remembered, and you can switch back to \"Default order\" anytime. Account positions stay stable even when a refresh occasionally fails.",
+  "latest": "0.1.5",
+  "notes": "排序重做:账号列表默认按订阅到期排列(最早到期的在最上,便于盯续费),另有「按周额度重置」「按周额度使用」两种排序可选,替代 0.1.4 的「按重置时间」;订阅距到期不足 3 天(或已过期)时,卡片上的「订阅至」日期会红字提醒。",
+  "notes_en": "Sorting revamped: accounts are now ordered by subscription expiry by default (soonest first, handy for renewals), with \"By weekly reset\" and \"By weekly usage\" as alternatives — replacing 0.1.4's \"By reset time\". Subscription dates turn red when expiry is within 3 days (or already passed).",
   "url": "https://github.com/ZhiMaHang/tidewatch/releases/latest"
 }
