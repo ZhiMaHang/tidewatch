@@ -1,6 +1,6 @@
 {
-  "latest": "0.1.3",
-  "notes": "修复:多账号同时刷新会触发限流(改为逐个请求+自动退避);被限流或登录失效的 Claude 账号,卡片上可一键「重新登录」立即恢复。界面改为纯中文。更新后如提示重新授权钥匙串,属未签名正常现象。",
-  "notes_en": "Fixes: refreshing multiple accounts at once could trigger rate limiting (requests are now serialized with automatic backoff); rate-limited or signed-out Claude accounts can be recovered instantly via a one-click re-sign-in on the card. Note: the UI is now Chinese-only. If macOS re-prompts for Keychain access after updating, that's expected for an unsigned build.",
+  "latest": "0.1.4",
+  "notes": "新增:账号列表支持「按重置时间」排序——右上角「⋯」菜单里选择后,重置时间最远的账号排到最前,选择会被记住;切回「默认顺序」即恢复添加顺序。刷新偶发失败时列表位置保持稳定,不会上下跳动。",
+  "notes_en": "New: sort accounts by reset time — pick \"By reset time\" in the \"⋯\" menu to put the account with the furthest reset first; your choice is remembered, and you can switch back to \"Default order\" anytime. Account positions stay stable even when a refresh occasionally fails.",
   "url": "https://github.com/ZhiMaHang/tidewatch/releases/latest"
 }
