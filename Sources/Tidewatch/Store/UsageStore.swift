@@ -42,7 +42,7 @@ final class UsageStore {
     /// resetTime 模式下账号会在面板开着时沉底、下轮成功再跳回;用末次成功值钉住位置。
     private var lastResetKey: [UUID: Date] = [:]
 
-    /// 面板列表的实际展示顺序。读了 accounts/states/accountSortMode 三个可观察属性,
+    /// 面板列表的实际展示顺序。读了 accounts/states/accountSortMode/lastResetKey 四个可观察属性,
     /// 快照刷新(states 变化)后 @Observable 会驱动列表自动重排。
     var sortedAccounts: [Account] {
         guard accountSortMode == .resetTime else { return accounts }
@@ -55,7 +55,8 @@ final class UsageStore {
         return Self.sortedByReset(accounts, resets: resets)
     }
 
-    /// 排序键 = 该账号最新快照所有窗口 resetsAt 的最大值,降序(最远的排第一);
+    /// 排序键 = 该账号所有窗口 resetsAt 的最大值(现值优先,刷新失败期间由 lastResetKey
+    /// 兜底为末次成功值),降序(最远的排第一);
     /// 无键(无快照或全无 resetsAt)排最后;同键及无键之间保持传入顺序(稳定)。
     /// 纯函数(nonisolated + 显式传键),便于脱离 MainActor 单测。
     nonisolated static func sortedByReset(_ accounts: [Account], resets: [UUID: Date]) -> [Account] {
