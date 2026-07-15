@@ -96,6 +96,9 @@ struct UsageWindow: Equatable {
     var title: String
     var usedPercent: Double
     var resetsAt: Date?
+    /// 账号级「本周」窗口(非按模型细分)。各 provider 构造时自行判定,
+    /// 是 resetTime 排序的取键窗口(见 UsageStore.weeklySortKey)
+    var isAccountWeekly: Bool = false
 }
 
 struct UsageSnapshot: Equatable {

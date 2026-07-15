@@ -56,7 +56,8 @@ enum GLMProvider {
                     key: "\(type)-\(unit)",
                     title: title(type: type, unit: unit),
                     usedPercent: min(max(pct, 0), 100),
-                    resetsAt: resetsAt
+                    resetsAt: resetsAt,
+                    isAccountWeekly: type != "TIME_LIMIT" && unit == 6 // unit 6 = 周;TIME_LIMIT 是月度 MCP
                 ))
             }
         }

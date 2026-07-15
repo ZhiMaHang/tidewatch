@@ -194,8 +194,9 @@ enum CodexProvider {
         for (slot, fallback) in [("primary_window", L("主窗口", "Primary window")), ("secondary_window", L("次窗口", "Secondary window"))] {
             guard let w = rl[slot] as? [String: Any] else { continue }
             let used = (w["used_percent"] as? Double) ?? (w["used_percent"] as? Int).map(Double.init) ?? 0
+            let seconds = (w["limit_window_seconds"] as? Double) ?? (w["limit_window_seconds"] as? Int).map(Double.init)
             var title = fallback
-            if let seconds = (w["limit_window_seconds"] as? Double) ?? (w["limit_window_seconds"] as? Int).map(Double.init) {
+            if let seconds {
                 title = windowTitle(seconds: seconds)
             }
             if let prefix = namePrefix { title = "\(prefix) · \(title)" }
@@ -205,11 +206,15 @@ enum CodexProvider {
             } else if let after = (w["reset_after_seconds"] as? Double) ?? (w["reset_after_seconds"] as? Int).map(Double.init) {
                 resetsAt = Date().addingTimeInterval(after)
             }
+            // 账号级周窗:无模型前缀,且时长落在周区间(与 windowTitle 的分段一致);
+            // 接口没给时长时按惯例 secondary=周
+            let weeklyByDuration = seconds.map { $0 / 3600 > 25 && $0 / 3600 <= 24 * 8 }
             out.append(UsageWindow(
                 key: (namePrefix ?? "") + slot,
                 title: title,
                 usedPercent: min(max(used, 0), 100),
-                resetsAt: resetsAt
+                resetsAt: resetsAt,
+                isAccountWeekly: namePrefix == nil && (weeklyByDuration ?? (slot == "secondary_window"))
             ))
         }
         return out
