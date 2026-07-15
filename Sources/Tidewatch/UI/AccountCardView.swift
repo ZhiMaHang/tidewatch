@@ -29,6 +29,7 @@ struct AccountCardView: View {
                     if let end = account.manualSubscriptionEndsAt ?? state.snapshot?.subscriptionEndsAt {
                         Label {
                             Text(L("订阅至 ", "Renews ") + end.localized(date: .abbreviated))
+                                .foregroundStyle(Self.isExpiringSoon(end) ? Color.red : Color.secondary)
                         } icon: {
                             Image(systemName: "calendar")
                         }
@@ -169,6 +170,25 @@ struct AccountCardView: View {
         }
         .padding(10)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// 订阅临期红字阈值:到期日距今 ≤ 3 个自然日
+    static let expiringSoonThresholdDays = 3
+
+    /// 订阅是否临近到期:按日历自然日差判定(非 72 小时秒差,避免同一天内随时刻闪变),
+    /// 已过期(差为负)同样算临期。
+    /// 边界用例(设 now = 7月15日,任意时刻):
+    /// - end = 7月15日(今天到期,差 0 天)→ true
+    /// - end = 7月18日(3 天后)→ true
+    /// - end = 7月19日(4 天后)→ false
+    /// - end = 7月10日(已过期,差 -5 天)→ true
+    static func isExpiringSoon(_ end: Date, now: Date = .init(), calendar: Calendar = .current) -> Bool {
+        let days = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: now),
+            to: calendar.startOfDay(for: end)
+        ).day ?? .max
+        return days <= expiringSoonThresholdDays
     }
 
     /// 只有 managed Claude(应用内登录)有重新登录通道;CLI/文件导入的凭据归各自 CLI 管
