@@ -92,8 +92,7 @@ struct MenuContentView: View {
                     Text(L("30 分钟", "30 min")).tag(30)
                 }
                 Picker(L("账号排序", "Sort accounts"), selection: Bindable(store).accountSortMode) {
-                    Text(L("默认顺序", "Default order")).tag(AccountSortMode.added)
-                    Text(L("按重置时间", "By reset time")).tag(AccountSortMode.resetTime)
+                    Text(L("按订阅到期", "By subscription end")).tag(AccountSortMode.subscriptionEnd)
                 }
                 Divider()
                 // 匿名版本检查:只发当前版本号,可随时关(隐私红线要求默认开、可关)
