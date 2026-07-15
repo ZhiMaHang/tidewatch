@@ -30,7 +30,7 @@ struct MenuContentView: View {
         // 所以先用背景 GeometryReader 量出内容真实高度,再给 ScrollView 定高(超过上限才滚动)。
         ScrollView {
             VStack(spacing: 10) {
-                ForEach(store.accounts) { account in
+                ForEach(store.sortedAccounts) { account in
                     AccountCardView(account: account, state: store.states[account.id] ?? .idle)
                 }
             }
@@ -90,6 +90,10 @@ struct MenuContentView: View {
                     Text(L("5 分钟", "5 min")).tag(5)
                     Text(L("15 分钟", "15 min")).tag(15)
                     Text(L("30 分钟", "30 min")).tag(30)
+                }
+                Picker(L("账号排序", "Sort accounts"), selection: Bindable(store).accountSortMode) {
+                    Text(L("默认顺序", "Default order")).tag(AccountSortMode.added)
+                    Text(L("按重置时间", "By reset time")).tag(AccountSortMode.resetTime)
                 }
                 Divider()
                 // 匿名版本检查:只发当前版本号,可随时关(隐私红线要求默认开、可关)

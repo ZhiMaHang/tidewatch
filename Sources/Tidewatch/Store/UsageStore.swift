@@ -1,6 +1,14 @@
 import Foundation
 import Observation
 
+/// 账号列表排序模式(rawValue 持久化到 UserDefaults)
+enum AccountSortMode: String, CaseIterable {
+    /// 默认:按添加顺序
+    case added
+    /// 按重置时间降序:重置时刻离现在最远(刚重置完、额度最新鲜)的排第一
+    case resetTime
+}
+
 @MainActor
 @Observable
 final class UsageStore {
@@ -19,6 +27,39 @@ final class UsageStore {
             UserDefaults.standard.set(refreshIntervalMinutes, forKey: "refreshIntervalMinutes")
             restartLoop()
         }
+    }
+    var accountSortMode: AccountSortMode {
+        didSet {
+            guard accountSortMode != oldValue else { return }
+            UserDefaults.standard.set(accountSortMode.rawValue, forKey: "accountSortMode")
+        }
+    }
+
+    /// 面板列表的实际展示顺序。读了 accounts/states/accountSortMode 三个可观察属性,
+    /// 快照刷新(states 变化)后 @Observable 会驱动列表自动重排。
+    var sortedAccounts: [Account] {
+        guard accountSortMode == .resetTime else { return accounts }
+        var resets: [UUID: Date] = [:]
+        for account in accounts {
+            if let d = states[account.id]?.snapshot?.windows.compactMap(\.resetsAt).max() {
+                resets[account.id] = d
+            }
+        }
+        return Self.sortedByReset(accounts, resets: resets)
+    }
+
+    /// 排序键 = 该账号最新快照所有窗口 resetsAt 的最大值,降序(最远的排第一);
+    /// 无键(无快照或全无 resetsAt)排最后;同键及无键之间保持传入顺序(稳定)。
+    /// 纯函数(nonisolated + 显式传键),便于脱离 MainActor 单测。
+    nonisolated static func sortedByReset(_ accounts: [Account], resets: [UUID: Date]) -> [Account] {
+        accounts.enumerated().sorted { a, b in
+            switch (resets[a.element.id], resets[b.element.id]) {
+            case let (l?, r?): return l == r ? a.offset < b.offset : l > r
+            case (.some, .none): return true
+            case (.none, .some): return false
+            case (.none, .none): return a.offset < b.offset
+            }
+        }.map(\.element)
     }
 
     /// 手动「立即检查更新」的瞬时反馈(自动回路不用它)
@@ -56,6 +97,8 @@ final class UsageStore {
     init() {
         let stored = UserDefaults.standard.integer(forKey: "refreshIntervalMinutes")
         refreshIntervalMinutes = stored >= 3 ? stored : 5
+        accountSortMode = UserDefaults.standard.string(forKey: "accountSortMode")
+            .flatMap(AccountSortMode.init(rawValue:)) ?? .added
         // 默认开:老用户/首启时该 key 不存在(nil)也视为开。didSet 在 init 内不触发,不会提前启动 loop。
         updateCheckEnabled = UserDefaults.standard.object(forKey: Keys.updateCheckEnabled) as? Bool ?? true
         accounts = AccountsRepository.load()
