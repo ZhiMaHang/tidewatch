@@ -1,6 +1,6 @@
 {
-  "latest": "0.1.2",
-  "notes": "修复:切换界面语言时卡片内文案实时重译;卡片头部套餐徽章与订阅/付款各行左缘对齐;日期跟随界面语言显示(英文环境不再出现中文年月日)。更新后如提示重新授权钥匙串,属未签名正常现象。",
-  "notes_en": "Fixes: card text now re-translates instantly when you switch the UI language; the plan badge and header rows are left-aligned; dates follow the UI language (no more Chinese date format in English). If macOS re-prompts for Keychain access after updating, that's expected for an unsigned build.",
+  "latest": "0.1.3",
+  "notes": "修复:多账号同时刷新会触发限流(改为逐个请求+自动退避);被限流或登录失效的 Claude 账号,卡片上可一键「重新登录」立即恢复。界面改为纯中文。更新后如提示重新授权钥匙串,属未签名正常现象。",
+  "notes_en": "Fixes: refreshing multiple accounts at once could trigger rate limiting (requests are now serialized with automatic backoff); rate-limited or signed-out Claude accounts can be recovered instantly via a one-click re-sign-in on the card. Note: the UI is now Chinese-only. If macOS re-prompts for Keychain access after updating, that's expected for an unsigned build.",
   "url": "https://github.com/ZhiMaHang/tidewatch/releases/latest"
 }
