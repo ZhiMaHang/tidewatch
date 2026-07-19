@@ -124,8 +124,9 @@ struct AccountCardView: View {
             case .rateLimited:
                 VStack(alignment: .leading, spacing: 3) {
                     Label {
+                        // 不断言「登录已过期」:这个态也可能来自熔断跳过(本轮没发请求,凭据完全有效)
                         Text(canRelogin
-                             ? L("登录已过期,续期被限流——重新登录可立即恢复", "Sign-in expired and renewal is rate limited — re-sign in to recover now")
+                             ? L("Claude 端点限流中,稍后自动重试;重新登录可立即恢复", "Claude endpoint is rate limited — retrying later; re-sign in to recover now")
                              : L("请求被限流,稍后自动重试", "Rate limited — retrying automatically"))
                             .font(.caption2)
                     } icon: {
@@ -348,13 +349,13 @@ struct WindowGaugeView: View {
     /// 整句组装:重置点已过去时(旧快照常见)单说「已重置」,避免拼出「重置于 已重置」
     private func resetLabel(_ date: Date) -> String {
         date.timeIntervalSinceNow <= 0
-            ? L("已重置", "Reset already")
+            ? L("已重置", "Already reset")
             : L("重置于 ", "Resets ") + resetText(date)
     }
 
     private func resetText(_ date: Date) -> String {
         let remain = date.timeIntervalSinceNow
-        if remain <= 0 { return L("已重置", "now") }
+        if remain <= 0 { return L("已重置", "Already reset") } // 防御分支:resetLabel 已拦截,正常不可达
         let hours = Int(remain) / 3600
         let minutes = (Int(remain) % 3600) / 60
         if hours >= 48 { return L("\(hours / 24) 天\(hours % 24) 小时后", "in \(hours / 24)d \(hours % 24)h") }

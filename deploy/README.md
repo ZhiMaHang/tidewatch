@@ -18,7 +18,7 @@ App 发起的请求形如 `GET /tidewatch/latest.json?v=0.1.0`,User-Agent = `Tid
 |---|---|---|
 | `latest` | 是 | 线上最新版本号,语义化 `x.y.z`。低于或等于用户本机版本则不提示 |
 | `notes` | 否 | Release notes(中文),面板横幅二级文案 |
-| `notes_en` | 否 | Release notes(英文),英文环境优先取 |
+| `notes_en` | 否 | Release notes(英文),仅在中文 `notes` 缺失/为空时回退使用(当前 UI 恒中文) |
 | `url` | 否 | 「下载」按钮打开的落地页(承接页 / GitHub Release) |
 
 未知字段一律被忽略(可安全附加 `sha256`、`min_os` 等给别处用)。

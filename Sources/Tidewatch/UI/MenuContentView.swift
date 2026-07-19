@@ -211,9 +211,11 @@ struct MenuContentView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            // 「更新于」只代表跑过一轮刷新,不代表都成功了;有账号被限流时在这里点破
+            // 「更新于」只代表跑过一轮刷新,不代表都成功了;有账号被限流时在这里点破。
+            // 分隔点只在前面真有「更新于」时才带(首轮刷新途中 lastRefreshAt 还是 nil)
             if store.throttledCount > 0 {
-                Text(L("· \(store.throttledCount) 个账号限流中", "· \(store.throttledCount) rate limited"))
+                Text((store.lastRefreshAt != nil ? "· " : "")
+                     + L("\(store.throttledCount) 个账号限流中", "\(store.throttledCount) rate limited"))
                     .font(.caption2)
                     .foregroundStyle(.orange)
             }

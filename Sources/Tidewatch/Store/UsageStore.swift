@@ -193,9 +193,13 @@ final class UsageStore {
                 cachedSortKeys[account.id] = CachedSortKeys(snapshot: snap)
             }
         }
-        // 磁盘里可能残留已移除账号的条目(如移除时写盘失败),顺手清理
+        // 磁盘里可能残留已移除账号的条目(如移除时写盘失败/在飞任务复活),清掉并回写
         let ids = Set(accounts.map(\.id))
-        diskSnapshots = diskSnapshots.filter { ids.contains($0.key) }
+        let pruned = diskSnapshots.filter { ids.contains($0.key) }
+        if pruned.count != diskSnapshots.count {
+            diskSnapshots = pruned
+            SnapshotsRepository.save(diskSnapshots)
+        }
         if let data = UserDefaults.standard.data(forKey: "designFirstSeen"),
            let d = try? JSONDecoder().decode([String: Date].self, from: data) {
             designFirstSeen = d
@@ -314,7 +318,9 @@ final class UsageStore {
                         // 手动强刷防雪崩:本账号**确实吃到 429**(而非冷却残留)才停,它就是这轮的探针,
                         // 其余账号不再继续撞端点,直接标成「限流中·旧数据」。自动回路不需要这个 break:
                         // refresh() 的熔断守卫会让后续账号各自快速跳过。
-                        if force, outcome == .rateLimited, let self {
+                        // 只对有共享限流桶的 provider(见 cooldownProviders)——GLM/Codex 一个账号 429
+                        // 不代表同伴也会,break 反而让其余账号被静默跳过。
+                        if force, outcome == .rateLimited, Self.cooldownProviders.contains(provider), let self {
                             await self.degradeRemainingAfterRateLimit(provider, Array(providerAccounts[(i + 1)...]))
                             break
                         }
@@ -357,12 +363,13 @@ final class UsageStore {
 
     /// force=false 时跳过已标记需重登的账号(避免每轮空刷 invalid_grant);
     /// 同一账号只允许一个进行中的刷新,重复触发直接等已有任务。
-    /// 返回本次结局;等到别人已有任务或被守卫跳过都算 .skipped(不能替探针熔断作证)。
+    /// 返回本次结局;被守卫跳过算 .skipped。等到别人已有任务时返回其真实结局——
+    /// 那是一次真实的网络请求,它的 429 有资格替探针熔断作证(否则 force 循环
+    /// 会在冷却刚点燃时对下一个账号再多打一发)。
     @discardableResult
     func refresh(_ account: Account, force: Bool = false) async -> RefreshOutcome {
         if let existing = inFlight[account.id] {
-            _ = await existing.value
-            return .skipped
+            return await existing.value
         }
         if !force {
             if case .needsReauth = states[account.id] ?? .idle {
@@ -380,10 +387,16 @@ final class UsageStore {
         inFlight[account.id] = task
         let outcome = await task.value
         inFlight[account.id] = nil
-        // 账号可能在刷新途中被移除:removeAccount 清过的 state 不该被在飞任务写回来
-        // (幽灵条目会让 throttledCount 这类按 states 汇总的数字虚高)
+        // 账号可能在刷新途中被移除:removeAccount 清过的东西不该被在飞任务写回来
+        // (states 幽灵会虚高 throttledCount;markLoaded 复活的 diskSnapshots 条目
+        // 会把已移除账号的邮箱/用量残留在磁盘上)
         if !accounts.contains(where: { $0.id == account.id }) {
             states[account.id] = nil
+            cachedSortKeys[account.id] = nil
+            if diskSnapshots[account.id] != nil {
+                diskSnapshots[account.id] = nil
+                SnapshotsRepository.save(diskSnapshots)
+            }
         }
         return outcome
     }
