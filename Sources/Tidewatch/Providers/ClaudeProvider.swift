@@ -25,8 +25,9 @@ enum ClaudeProvider {
     static let refreshURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
     static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     static let betaHeader = "oauth-2025-04-20"
-    /// 不带 claude-code 风格 UA 会被服务端限流(社区实测),格式为 claude-code/<version>
-    static let userAgent = "claude-code/2.1.52"
+    /// 不带 claude-code 风格 UA 会被服务端限流(社区实测),格式为 claude-code/<version>。
+    /// 版本号跟随本机较新的 Claude Code CLI(过旧版本有被服务端另眼相待的风险),发版前顺手对齐
+    static let userAgent = "claude-code/2.1.207"
     static let cliKeychainService = "Claude Code-credentials"
     static var defaultCredentialsFile: String {
         (NSHomeDirectory() as NSString).appendingPathComponent(".claude/.credentials.json")

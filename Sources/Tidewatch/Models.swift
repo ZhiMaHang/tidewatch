@@ -91,7 +91,7 @@ struct DesignProject: Identifiable, Equatable {
     var url: String?
 }
 
-struct UsageWindow: Equatable {
+struct UsageWindow: Equatable, Codable {
     var key: String
     var title: String
     var usedPercent: Double
@@ -101,7 +101,7 @@ struct UsageWindow: Equatable {
     var isAccountWeekly: Bool = false
 }
 
-struct UsageSnapshot: Equatable {
+struct UsageSnapshot: Equatable, Codable {
     var windows: [UsageWindow]
     var planType: String?
     var email: String?
@@ -111,10 +111,21 @@ struct UsageSnapshot: Equatable {
     var fetchedAt: Date
 }
 
+/// 旧快照仍在展示时,它「不新鲜」的原因(驱动卡片上不同的标注文案)
+enum StaleReason: Equatable {
+    /// 最近一次刷新被限流(HTTP 429),关联下次恢复自动刷新的时间
+    case rateLimited(nextRetryAt: Date?)
+    /// 重启后从磁盘恢复的上次数据,首轮刷新还没跑完(中性状态,不是故障)
+    case restored
+}
+
 enum AccountState: Equatable {
     case idle
     case loading
     case loaded(UsageSnapshot)
+    /// 有旧快照可看,但数据不新鲜(原因见 StaleReason):继续展示旧数据,
+    /// 卡片如实标注数据时刻与原因,不再静默装作一切正常
+    case loadedStale(UsageSnapshot, StaleReason)
     case needsReauth(String)
     case error(String)
     /// 响应解析失败:多半是官方接口改了字段(不是用户的问题),提示看是否有新版
@@ -123,8 +134,10 @@ enum AccountState: Equatable {
     case rateLimited
 
     var snapshot: UsageSnapshot? {
-        if case .loaded(let s) = self { return s }
-        return nil
+        switch self {
+        case .loaded(let s), .loadedStale(let s, _): return s
+        default: return nil
+        }
     }
 }
 
