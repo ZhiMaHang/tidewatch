@@ -1,6 +1,6 @@
 {
-  "latest": "0.1.5",
-  "notes": "排序重做:账号列表默认按订阅到期排列(最早到期的在最上,便于盯续费),另有「按周额度重置」「按周额度使用」两种排序可选,替代 0.1.4 的「按重置时间」;订阅距到期不足 3 天(或已过期)时,卡片上的「订阅至」日期会红字提醒。",
-  "notes_en": "Sorting revamped: accounts are now ordered by subscription expiry by default (soonest first, handy for renewals), with \"By weekly reset\" and \"By weekly usage\" as alternatives — replacing 0.1.4's \"By reset time\". Subscription dates turn red when expiry is within 3 days (or already passed).",
+  "latest": "0.1.6",
+  "notes": "限流不再装死:Claude 接口限流时,卡片会明确标注「限流中·显示某时刻的数据」并给出恢复时间,数字不再悄悄冻结让人以为刷新失效;多账号刷新改为单探针,不再连环触发限流,恢复更快;重启后先展示上次成功的额度数据,不再空白等待。",
+  "notes_en": "Rate limiting is now visible: when Claude's API throttles requests, cards clearly say \"rate limited — data from …\" with a recovery time instead of silently freezing. Multi-account refresh probes with a single request instead of hammering the endpoint, so it recovers faster. After a restart, your last known usage shows right away instead of blank cards.",
   "url": "https://github.com/ZhiMaHang/tidewatch/releases/latest"
 }
