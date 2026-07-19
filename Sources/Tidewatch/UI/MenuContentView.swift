@@ -221,6 +221,10 @@ struct MenuContentView: View {
             Text(L("\(store.accounts.count) 个账号", "\(store.accounts.count) accounts"))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            // 当前版本常驻可见:用户反馈过没处看自己跑的是哪版(检查更新的反馈是瞬时的)
+            Text("v" + AppVersion.current)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
