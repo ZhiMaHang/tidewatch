@@ -100,14 +100,10 @@ struct AccountCardView: View {
                     Text(L("加载中…", "Loading…")).font(.caption).foregroundStyle(.secondary)
                 }
             case .loaded(let snapshot):
-                ForEach(snapshot.windows, id: \.key) { window in
-                    WindowGaugeView(window: window)
-                }
-                if let credits = snapshot.creditsBalance {
-                    Text(L("额外 Credits: ", "Extra credits: ") + credits)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                windowsView(snapshot)
+            case .loadedStale(let snapshot, let reason):
+                windowsView(snapshot)
+                staleNotice(snapshot, reason: reason)
             case .needsReauth(let message):
                 VStack(alignment: .leading, spacing: 3) {
                     Label {
@@ -170,6 +166,56 @@ struct AccountCardView: View {
         }
         .padding(10)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func windowsView(_ snapshot: UsageSnapshot) -> some View {
+        ForEach(snapshot.windows, id: \.key) { window in
+            WindowGaugeView(window: window)
+        }
+        if let credits = snapshot.creditsBalance {
+            Text(L("额外 Credits: ", "Extra credits: ") + credits)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 旧数据标注:数字还在,但要让用户一眼知道它不新鲜、以及为什么。
+    /// 之前限流保留旧快照时完全静默(卡片与正常态无异),用户只会觉得「刷新失效了」。
+    /// 两种口吻:限流是橙色告警(附恢复时间与重登通道);重启恢复是中性灰(首轮刷新即覆盖)。
+    @ViewBuilder
+    private func staleNotice(_ snapshot: UsageSnapshot, reason: StaleReason) -> some View {
+        let dataTime = snapshot.fetchedAt.localized(date: .abbreviated, time: .shortened)
+        switch reason {
+        case .rateLimited(let nextRetryAt):
+            VStack(alignment: .leading, spacing: 3) {
+                Label {
+                    Text(L("限流中,显示 \(dataTime) 的数据", "Rate limited — showing data from \(dataTime)"))
+                        .font(.caption2)
+                } icon: {
+                    Image(systemName: "hourglass")
+                        .foregroundStyle(.orange)
+                }
+                HStack(spacing: 8) {
+                    if let retry = nextRetryAt, retry > Date() {
+                        // 说「恢复自动刷新」而非「自动重试」:真正的重试发生在这之后的下一个刷新周期
+                        let t = retry.localized(date: .omitted, time: .shortened)
+                        Text(L("\(t) 后恢复自动刷新", "Auto-refresh resumes after \(t)"))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    reloginButton
+                }
+            }
+        case .restored:
+            Label {
+                Text(L("上次数据(\(dataTime)),刷新中…", "Last data (\(dataTime)), refreshing…"))
+                    .font(.caption2)
+            } icon: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     /// 订阅临期红字阈值:到期日距今 ≤ 3 个自然日
@@ -284,7 +330,7 @@ struct WindowGaugeView: View {
                 .tint(color)
                 .controlSize(.small)
             if let resetsAt = window.resetsAt {
-                Text(L("重置于 ", "Resets ") + resetText(resetsAt))
+                Text(resetLabel(resetsAt))
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
             }
@@ -297,6 +343,13 @@ struct WindowGaugeView: View {
         case ..<85: return .orange
         default: return .red
         }
+    }
+
+    /// 整句组装:重置点已过去时(旧快照常见)单说「已重置」,避免拼出「重置于 已重置」
+    private func resetLabel(_ date: Date) -> String {
+        date.timeIntervalSinceNow <= 0
+            ? L("已重置", "Reset already")
+            : L("重置于 ", "Resets ") + resetText(date)
     }
 
     private func resetText(_ date: Date) -> String {
