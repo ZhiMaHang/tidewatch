@@ -10,14 +10,21 @@ import Foundation
 enum SnapshotsRepository {
     static var fileURL: URL { AccountsRepository.directory.appendingPathComponent("snapshots.json") }
 
+    // 磁盘格式用 uuidString 作键:[UUID: T] 的合成 Codable 会编码成键值交替的扁平数组
+    // (UUID 非 String/Int 键),既不可读也容易被外部工具误伤;字符串键才是普通 JSON 对象
+
     static func load() -> [UUID: UsageSnapshot] {
-        guard let data = try? Data(contentsOf: fileURL) else { return [:] }
-        return (try? JSONDecoder.iso.decode([UUID: UsageSnapshot].self, from: data)) ?? [:]
+        guard let data = try? Data(contentsOf: fileURL),
+              let raw = try? JSONDecoder.iso.decode([String: UsageSnapshot].self, from: data) else { return [:] }
+        return raw.reduce(into: [:]) { result, entry in
+            if let id = UUID(uuidString: entry.key) { result[id] = entry.value }
+        }
     }
 
     static func save(_ snapshots: [UUID: UsageSnapshot]) {
         try? FileManager.default.createDirectory(at: AccountsRepository.directory, withIntermediateDirectories: true)
-        guard let data = try? JSONEncoder.iso.encode(snapshots) else { return }
+        let raw = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.key.uuidString, $0.value) })
+        guard let data = try? JSONEncoder.iso.encode(raw) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
 }
