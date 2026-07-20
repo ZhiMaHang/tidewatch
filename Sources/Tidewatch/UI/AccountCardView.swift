@@ -5,6 +5,9 @@ struct AccountCardView: View {
     @Environment(\.openWindow) private var openWindow
     let account: Account
     let state: AccountState
+    /// 展开显示的 429 现场的时间戳(卡片内联展开,不另开窗口)。
+    /// 用时间戳而非布尔:换了一条新记录(再次吃到 429)自动回到收起态
+    @State private var expandedRateLimitAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -124,10 +127,11 @@ struct AccountCardView: View {
             case .rateLimited:
                 VStack(alignment: .leading, spacing: 3) {
                     Label {
-                        // 不断言「登录已过期」:这个态也可能来自熔断跳过(本轮没发请求,凭据完全有效)
+                        // 不断言「登录已过期」:429 在凭据校验之前发生,凭据可能完全有效;
+                        // 停摆提示与原始响应在下方常驻的 rateLimitResponse 里
                         Text(canRelogin
-                             ? L("Claude 端点限流中,稍后自动重试;重新登录可立即恢复", "Claude endpoint is rate limited — retrying later; re-sign in to recover now")
-                             : L("请求被限流,稍后自动重试", "Rate limited — retrying automatically"))
+                             ? L("请求被限流;重新登录也可恢复", "Rate limited — re-signing in can also recover")
+                             : L("请求被限流", "Rate limited"))
                             .font(.caption2)
                     } icon: {
                         Image(systemName: "hourglass")
@@ -152,6 +156,10 @@ struct AccountCardView: View {
                     .foregroundStyle(.blue)
                 }
             }
+
+            // 限流现场入口不绑在某个状态分支上:只要记录还在(粘滞未解除)就常驻可见——
+            // 粘滞期间手动刷新若遇断网,展示态会变成 .error,但 429 现场不该跟着失踪
+            rateLimitResponse
 
             if let projects = store.designProjects[account.id], !projects.isEmpty {
                 Button {
@@ -183,12 +191,13 @@ struct AccountCardView: View {
 
     /// 旧数据标注:数字还在,但要让用户一眼知道它不新鲜、以及为什么。
     /// 之前限流保留旧快照时完全静默(卡片与正常态无异),用户只会觉得「刷新失效了」。
-    /// 两种口吻:限流是橙色告警(附恢复时间与重登通道);重启恢复是中性灰(首轮刷新即覆盖)。
+    /// 两种口吻:限流是橙色告警(附原始响应与重登通道,自动刷新已停);
+    /// 重启恢复是中性灰(首轮刷新即覆盖)。
     @ViewBuilder
     private func staleNotice(_ snapshot: UsageSnapshot, reason: StaleReason) -> some View {
         let dataTime = snapshot.fetchedAt.localized(date: .abbreviated, time: .shortened)
         switch reason {
-        case .rateLimited(let nextRetryAt):
+        case .rateLimited:
             VStack(alignment: .leading, spacing: 3) {
                 Label {
                     Text(L("限流中,显示 \(dataTime) 的数据", "Rate limited — showing data from \(dataTime)"))
@@ -197,16 +206,7 @@ struct AccountCardView: View {
                     Image(systemName: "hourglass")
                         .foregroundStyle(.orange)
                 }
-                HStack(spacing: 8) {
-                    if let retry = nextRetryAt, retry > Date() {
-                        // 说「恢复自动刷新」而非「自动重试」:真正的重试发生在这之后的下一个刷新周期
-                        let t = retry.localized(date: .omitted, time: .shortened)
-                        Text(L("\(t) 后恢复自动刷新", "Auto-refresh resumes after \(t)"))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    reloginButton
-                }
+                reloginButton
             }
         case .restored:
             Label {
@@ -254,6 +254,65 @@ struct AccountCardView: View {
                 await store.refresh(account, force: true)
             }
         }
+    }
+
+    /// 限流粘滞的常驻信息条:停摆提示 + 一行「限流响应 · 时间」可展开原始正文。
+    /// 正文来自 HTTP.errorBody(带 host/path 与 Retry-After 前缀),留给用户自己判断何时再刷
+    @ViewBuilder
+    private var rateLimitResponse: some View {
+        if let record = store.rateLimits[account.id] {
+            let isExpanded = expandedRateLimitAt == record.at
+            VStack(alignment: .leading, spacing: 3) {
+                Text(L("已停止自动刷新,手动刷新成功后恢复", "Auto-refresh paused — resumes after a successful manual refresh"))
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                Button {
+                    expandedRateLimitAt = isExpanded ? nil : record.at
+                } label: {
+                    Label {
+                        Text(L("限流响应 · ", "Rate-limit response · ")
+                             + record.at.localized(date: .abbreviated, time: .shortened))
+                            .font(.caption2)
+                    } icon: {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 8, weight: .semibold))
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                if isExpanded {
+                    ScrollView {
+                        // 只排版前 4KB:CDN/WAF 的 429 错误页可达几十 KB,全量排版会卡住面板;复制仍给全文
+                        Text(displayBody(record.body))
+                            .font(.system(size: 9, design: .monospaced))
+                            .textSelection(.enabled) // best-effort:nonactivating 面板里选中/⌘C 不可靠,复制靠下面的按钮
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 96)
+                    .padding(6)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 6))
+                    // 面板是 nonactivating panel(拿不到键盘焦点,⌘C 会落到前台应用),
+                    // 这个按钮是唯一保证可用的复制通道,别当冗余清掉
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(record.body, forType: .string)
+                    } label: {
+                        Text(L("复制响应", "Copy response")).font(.caption2)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.blue)
+                }
+            }
+        }
+    }
+
+    /// 展开区的展示文本:空体给占位说明;超长只取前 4096 字符并注明已截断
+    private func displayBody(_ body: String) -> String {
+        if body.isEmpty { return L("(响应体为空)", "(empty response body)") }
+        let limit = 4096
+        guard body.count > limit else { return body }
+        return String(body.prefix(limit))
+            + "\n… " + L("(已截断,「复制响应」可得全文)", "(truncated — \"Copy response\" gives the full text)")
     }
 
     @ViewBuilder

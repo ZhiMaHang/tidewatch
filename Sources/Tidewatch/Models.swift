@@ -111,10 +111,19 @@ struct UsageSnapshot: Equatable, Codable {
     var fetchedAt: Date
 }
 
+/// 一次 429 限流的原始现场:响应正文(含 host/Retry-After 前缀,见 HTTP.errorBody)与发生时间。
+/// 持久化(见 RateLimitsRepository);记录存在即表示该账号处于「限流粘滞」——
+/// 自动刷新对它停摆(重启后依旧),只有手动刷新成功才清除。
+struct RateLimitRecord: Codable, Equatable {
+    var body: String
+    var at: Date
+}
+
 /// 旧快照仍在展示时,它「不新鲜」的原因(驱动卡片上不同的标注文案)
 enum StaleReason: Equatable {
-    /// 最近一次刷新被限流(HTTP 429),关联下次恢复自动刷新的时间
-    case rateLimited(nextRetryAt: Date?)
+    /// 最近一次刷新被限流(HTTP 429)。原始响应在 UsageStore.rateLimits 里,卡片可展开查看;
+    /// 该账号已退出自动刷新,只能手动刷新
+    case rateLimited
     /// 重启后从磁盘恢复的上次数据,首轮刷新还没跑完(中性状态,不是故障)
     case restored
 }
@@ -130,7 +139,8 @@ enum AccountState: Equatable {
     case error(String)
     /// 响应解析失败:多半是官方接口改了字段(不是用户的问题),提示看是否有新版
     case apiChanged
-    /// 被端点限流(HTTP 429),瞬时状态,下轮自动重试;仅在没有旧快照可显示时才落到这个态
+    /// 被端点限流(HTTP 429),且没有旧快照可显示。原始响应在 UsageStore.rateLimits;
+    /// 该账号已退出自动刷新,只能手动刷新(成功即恢复)
     case rateLimited
 
     var snapshot: UsageSnapshot? {

@@ -75,19 +75,11 @@ func runHeadlessCheck() async {
         print(L("(尚未添加账号。先启动 App 添加,或直接测试本机 Codex CLI:--check-codex-cli)",
                 "(No accounts yet. Launch the app to add one, or probe the local Codex CLI: --check-codex-cli)"))
     }
-    var throttledProviders = Set<Provider>()
     for (i, account) in accounts.enumerated() {
-        // 同 GUI 的 provider 熔断:Claude 账号共享限流桶,任一账号 429 后其余不再逐个撞端点
-        // (GLM 每账号独立 API key、Codex 未实测,都不熔断,和 UsageStore.cooldownProviders 一致)
-        if throttledProviders.contains(account.provider) {
-            print("\n[\(account.provider.displayName)] \(account.label)")
-            print("  " + L("跳过:该服务的端点正在限流(前面账号已 429)", "Skipped: provider endpoint is rate limited (an earlier account got 429)"))
-            continue
-        }
-        if i > 0 { try? await Task.sleep(for: .milliseconds(1500)) } // 同 GUI:错开相邻请求,避免自检自己触发限流
-        if await checkOne(account) == .rateLimited, account.provider == .claude {
-            throttledProviders.insert(account.provider)
-        }
+        // 同 GUI:错开相邻请求,避免自检自己触发短窗口限流;某账号 429 不影响其余账号,
+        // 各自请求、各自打印原始响应(和 GUI 的「限流不熔断、现场留给用户」一致)
+        if i > 0 { try? await Task.sleep(for: .milliseconds(1500)) }
+        await checkOne(account)
     }
     if CommandLine.arguments.contains("--check-codex-cli") || accounts.isEmpty {
         let probe = Account(id: UUID(), provider: .codex, label: L("本机 Codex CLI(探测)", "Local Codex CLI (probe)"), planType: nil,
@@ -98,12 +90,8 @@ func runHeadlessCheck() async {
     }
 }
 
-/// 自检单账号的结局:只区分「被限流」与其他(驱动上面的 provider 熔断)
-private enum CheckOutcome { case ok, failed, rateLimited }
-
 @MainActor
-@discardableResult
-private func checkOne(_ account: Account) async -> CheckOutcome {
+private func checkOne(_ account: Account) async {
     print("\n[\(account.provider.displayName)] \(account.label)")
     do {
         let snapshot: UsageSnapshot
@@ -125,12 +113,11 @@ private func checkOne(_ account: Account) async -> CheckOutcome {
             print("  \(w.title): \(Int(w.usedPercent))%\(reset)")
         }
         if let credits = snapshot.creditsBalance { print("  Credits: \(credits)") }
-        return .ok
     } catch QuotaError.http(429, let body) {
-        print("  " + L("失败: ", "Failed: ") + (QuotaError.http(429, body).localizedDescription))
-        return .rateLimited
+        // 限流:完整打印原始响应(不截断),和 GUI 保存现场供查看的口径一致
+        print("  " + L("失败: HTTP 429(限流),原始响应:", "Failed: HTTP 429 (rate limited), raw response:"))
+        print("  " + body)
     } catch {
         print("  " + L("失败: ", "Failed: ") + error.localizedDescription)
-        return .failed
     }
 }

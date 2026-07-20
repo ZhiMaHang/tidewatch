@@ -148,26 +148,14 @@ final class UsageStore {
     /// 每天查一次:够做「周活版本分布」度量,又不会 phone-home 刷屏
     private let updateCheckInterval: TimeInterval = 24 * 60 * 60
 
-    /// 单次刷新的结局(驱动手动强刷的探针熔断:只有确实吃到 429 才停掉同 provider 的后续账号)
-    enum RefreshOutcome { case success, rateLimited, failed, skipped }
-
     private var refreshLoop: Task<Void, Never>?
     private var updateLoop: Task<Void, Never>?
-    private var inFlight: [UUID: Task<RefreshOutcome, Never>] = [:]
-    /// 429 指数退避:账号 → (下次允许自动刷新的时间, 连续 429 次数)。
-    /// token 刷新端点(platform.claude.com)对 client_id/IP 限流有惩罚期,429 后继续按周期戳它
-    /// 会让惩罚自我维持;退避 15m→30m→1h→2h 封顶(带 ±20% 抖动防多账号对齐),
-    /// 成功一次即清零。手动强刷(force)可跳过账号级退避,但受 provider 熔断约束(见下)。
-    private var backoff429: [UUID: (until: Date, streak: Int)] = [:]
-    /// Provider 级限流熔断,**只对 Claude 生效**:Claude 的所有账号共用同一 client_id + 本机 IP
-    /// + 同一后端限流桶(2026-07-19 实测:platform/console/claude.ai 三个 OAuth host 的 token
-    /// 端点共享限流,且限流判定在凭据校验之前)。任一账号吃到 429 即对整个 provider 进入冷却:
-    /// 冷却期内其余账号不再逐个撞端点——否则 4 账号一轮 4 连击,反而喂养惩罚期。
-    /// 冷却后的下一轮里,第一个账号天然成为探针:成功即清熔断放行其余账号。
-    /// GLM 是每账号独立 API key(无共享限流桶),Codex 未实测——都只走账号级退避,不熔断。
-    private var providerCooldown: [Provider: Date] = [:]
-    /// 共享限流桶已被实测证实的 provider(熔断只对它们生效)
-    private static let cooldownProviders: Set<Provider> = [.claude]
+    private var inFlight: [UUID: Task<Void, Never>] = [:]
+    /// 限流粘滞:账号 → 最近一次 429 的原始现场(响应正文 + 时间),持久化(见 RateLimitsRepository)。
+    /// 记录存在即该账号退出自动刷新回路(重启后依旧),卡片可展开查看原始响应;
+    /// 只有手动刷新**成功**才清除(见 clearRateLimit)。不做退避、不做熔断、不自动恢复——
+    /// 何时再撞端点完全由用户决定(429 惩罚期内自动重试只会喂养惩罚,不如把现场留给人判断)。
+    var rateLimits: [UUID: RateLimitRecord] = [:]
     /// 是否有 design 凭据的缓存(nil=未判定),避免每轮刷新做钥匙串读
     private var designAvailable: [UUID: Bool] = [:]
     /// 磁盘上的「各账号最后一次成功快照」的内存镜像。只在刷新成功与移除账号时变更,
@@ -187,10 +175,17 @@ final class UsageStore {
         // 重启后先亮出上次成功的快照(中性标注「上次数据」,不是限流告警),等首轮刷新覆盖;
         // 若首轮就被限流,用户至少还有上次的数字可看,而不是一排空卡片
         diskSnapshots = SnapshotsRepository.load()
+        // 限流粘滞跨重启:上次退出前吃过 429 的账号,重启后继续停在限流态、不进自动回路
+        // (否则重启就成了变相的自动重试),原始响应照旧可查看
+        rateLimits = RateLimitsRepository.load()
         for account in accounts {
             if let snap = diskSnapshots[account.id] {
-                states[account.id] = .loadedStale(snap, .restored)
+                states[account.id] = rateLimits[account.id] != nil
+                    ? .loadedStale(snap, .rateLimited)
+                    : .loadedStale(snap, .restored)
                 cachedSortKeys[account.id] = CachedSortKeys(snapshot: snap)
+            } else if rateLimits[account.id] != nil {
+                states[account.id] = .rateLimited
             }
         }
         // 磁盘里可能残留已移除账号的条目(如移除时写盘失败/在飞任务复活),清掉并回写
@@ -199,6 +194,11 @@ final class UsageStore {
         if pruned.count != diskSnapshots.count {
             diskSnapshots = pruned
             SnapshotsRepository.save(diskSnapshots)
+        }
+        let prunedRL = rateLimits.filter { ids.contains($0.key) }
+        if prunedRL.count != rateLimits.count {
+            rateLimits = prunedRL
+            RateLimitsRepository.save(rateLimits)
         }
         if let data = UserDefaults.standard.data(forKey: "designFirstSeen"),
            let d = try? JSONDecoder().decode([String: Date].self, from: data) {
@@ -303,27 +303,18 @@ final class UsageStore {
         // 同一 provider 的账号共用同一 host + 同一 client_id(Claude 尤甚:所有账号都用 Claude Code 的
         // client_id),并发请求会触发端点按 IP/client 的突发限流(429,多个账号一起挂)。所以:
         // 同 provider 内串行 + 相邻请求错开一点;不同 provider 之间仍并发(不同 host,互不影响)。
+        // 某账号吃到 429 不影响本轮其余账号:各自请求、各自留现场、各自进粘滞。
         let byProvider = Dictionary(grouping: accounts, by: { $0.provider })
         await withTaskGroup(of: Void.self) { group in
-            for (provider, providerAccounts) in byProvider {
+            for (_, providerAccounts) in byProvider {
                 group.addTask { [weak self] in
                     for (i, account) in providerAccounts.enumerated() {
                         // 同 provider 相邻请求错开 1.5s:多账号共用同一 client_id/IP,连续快打会踩端点短窗口限流。
-                        // 每 30 分钟一轮,即便 4 个 Claude 摊到 ~4.5s 也可忽略。
                         if i > 0 { try? await Task.sleep(for: .milliseconds(1500)) }
                         // 回路被取消(如改刷新间隔触发 restartLoop)时上面的 sleep 立即返回,
                         // 错峰就没了——直接停掉本轮剩余账号,别退化成背靠背连击
                         if Task.isCancelled { break }
-                        let outcome = await self?.refresh(account, force: force)
-                        // 手动强刷防雪崩:本账号**确实吃到 429**(而非冷却残留)才停,它就是这轮的探针,
-                        // 其余账号不再继续撞端点,直接标成「限流中·旧数据」。自动回路不需要这个 break:
-                        // refresh() 的熔断守卫会让后续账号各自快速跳过。
-                        // 只对有共享限流桶的 provider(见 cooldownProviders)——GLM/Codex 一个账号 429
-                        // 不代表同伴也会,break 反而让其余账号被静默跳过。
-                        if force, outcome == .rateLimited, Self.cooldownProviders.contains(provider), let self {
-                            await self.degradeRemainingAfterRateLimit(provider, Array(providerAccounts[(i + 1)...]))
-                            break
-                        }
+                        await self?.refresh(account, force: force)
                     }
                 }
             }
@@ -331,62 +322,27 @@ final class UsageStore {
         lastRefreshAt = Date()
     }
 
-    /// provider 熔断冷却若生效,返回截止时间;过期返回 nil
-    private func activeProviderCooldown(_ provider: Provider) -> Date? {
-        guard let until = providerCooldown[provider], until > Date() else { return nil }
-        return until
-    }
-
-    /// 探针吃到 429 后处理同 provider 的剩余账号:读冷却与改状态在同一次 MainActor 调用里完成
-    /// (拆成两次 await 会留竞态窗口:中间若另一账号刷新成功清了熔断,这里就会拿旧冷却盖新数据)。
-    /// 在飞与已移除的账号不碰——前者让它自己收尾,后者不该再留幽灵状态。
-    private func degradeRemainingAfterRateLimit(_ provider: Provider, _ remaining: [Account]) {
-        guard let until = activeProviderCooldown(provider) else { return }
-        let liveIDs = Set(accounts.map(\.id))
-        for account in remaining where liveIDs.contains(account.id) && inFlight[account.id] == nil {
-            markSkippedByCooldown(account, until: until)
-        }
-    }
-
-    /// 因限流冷却被跳过的账号:有旧快照的标成「限流中·旧数据」,从没成功过的标成限流态;
-    /// 其余状态(needsReauth/error/apiChanged/loading)保持原样,不掩盖更具体的问题
-    private func markSkippedByCooldown(_ account: Account, until: Date) {
-        switch states[account.id] {
-        case .loaded(let snap), .loadedStale(let snap, _):
-            states[account.id] = .loadedStale(snap, .rateLimited(nextRetryAt: until))
-        case .idle, .rateLimited, nil:
-            states[account.id] = .rateLimited
-        default:
-            break
-        }
-    }
-
-    /// force=false 时跳过已标记需重登的账号(避免每轮空刷 invalid_grant);
+    /// force=false 时跳过两类账号:已标记需重登的(避免每轮空刷 invalid_grant),
+    /// 与限流粘滞的(上次吃过 429,见 rateLimits——只能手动刷新,自动回路不碰)。
     /// 同一账号只允许一个进行中的刷新,重复触发直接等已有任务。
-    /// 返回本次结局;被守卫跳过算 .skipped。等到别人已有任务时返回其真实结局——
-    /// 那是一次真实的网络请求,它的 429 有资格替探针熔断作证(否则 force 循环
-    /// 会在冷却刚点燃时对下一个账号再多打一发)。
-    @discardableResult
-    func refresh(_ account: Account, force: Bool = false) async -> RefreshOutcome {
+    func refresh(_ account: Account, force: Bool = false) async {
         if let existing = inFlight[account.id] {
-            return await existing.value
+            await existing.value
+            return
         }
         if !force {
-            if case .needsReauth = states[account.id] ?? .idle {
-                return .skipped
-            }
-            // 账号级退避与 provider 级熔断取较晚者;冷却期内不撞端点,
-            // 但要把「还在限流等待」如实反映到卡片上(旧快照 → loadedStale)
-            let untils = [backoff429[account.id]?.until, providerCooldown[account.provider]].compactMap { $0 }
-            if let until = untils.max(), until > Date() {
-                markSkippedByCooldown(account, until: until)
-                return .skipped
-            }
+            if case .needsReauth = states[account.id] ?? .idle { return }
+            if rateLimits[account.id] != nil { return }
         }
-        let task = Task { await self.performRefresh(account) }
+        let task = Task {
+            await self.performRefresh(account)
+            // 完成即清,不等创建者的 continuation 恢复:那一跳间隙里进来的手动刷新
+            // 会命中上面的 dedup 分支、await 一个已完成的任务然后静默返回——
+            // 粘滞账号唯一的恢复通道被无声吞掉
+            self.inFlight[account.id] = nil
+        }
         inFlight[account.id] = task
-        let outcome = await task.value
-        inFlight[account.id] = nil
+        await task.value
         // 账号可能在刷新途中被移除:removeAccount 清过的东西不该被在飞任务写回来
         // (states 幽灵会虚高 throttledCount;markLoaded 复活的 diskSnapshots 条目
         // 会把已移除账号的邮箱/用量残留在磁盘上)
@@ -397,8 +353,11 @@ final class UsageStore {
                 diskSnapshots[account.id] = nil
                 SnapshotsRepository.save(diskSnapshots)
             }
+            if rateLimits[account.id] != nil {
+                rateLimits[account.id] = nil
+                RateLimitsRepository.save(rateLimits)
+            }
         }
-        return outcome
     }
 
     /// 落地成功快照:更新展示态、同步排序键缓存(见 cachedSortKeys),并持久化到磁盘
@@ -412,8 +371,7 @@ final class UsageStore {
         SnapshotsRepository.save(diskSnapshots)
     }
 
-    @discardableResult
-    private func performRefresh(_ account: Account) async -> RefreshOutcome {
+    private func performRefresh(_ account: Account) async {
         if states[account.id]?.snapshot == nil {
             states[account.id] = .loading
         }
@@ -432,42 +390,38 @@ final class UsageStore {
                 markLoaded(account.id, snapshot)
                 updateLabelIfNeeded(account, email: nil, plan: snapshot.planType)
             }
-            backoff429[account.id] = nil // 成功即清退避
-            providerCooldown[account.provider] = nil // 探针成功,解除整个 provider 的熔断
-            return .success
+            clearRateLimit(account.id)
         } catch QuotaError.unauthorized {
             states[account.id] = .needsReauth(L("凭据已失效,请重新登录", "Credentials expired, please sign in again"))
-            return .failed
         } catch QuotaError.http(429, let body) {
-            // 限流:进指数退避(15m→30m→1h→2h 封顶,±20% 抖动防多账号同轮进入后每轮对齐连击),
-            // 服务端给了 Retry-After 就尊重它(钳制在 1 分钟~2 小时:0/畸形值会让整套背压失效,
-            // 离谱大值会把账号锁死太久);对 Claude 同时点燃 provider 熔断(共用限流桶,
-            // 一个账号 429 之后紧接着刷其余账号只会喂养惩罚期;GLM/Codex 见 providerCooldown 注释)。
-            // 有上次成功的快照就继续展示,但如实标注「限流中·旧数据」;从没成功过才落到限流态。
-            let streak = (backoff429[account.id]?.streak ?? 0) + 1
-            let base = min(900 * pow(2, Double(streak - 1)), 7200)
-            let jittered = base * Double.random(in: 0.8...1.2)
-            let delay = Self.retryAfterSeconds(inErrorBody: body).map { min(max($0, 60), 7200) } ?? jittered
-            let until = Date().addingTimeInterval(delay)
-            backoff429[account.id] = (until, streak)
-            if Self.cooldownProviders.contains(account.provider) {
-                // 直接覆盖而非取 max:最新一次 429 携带的是端点当下最新鲜的状态
-                providerCooldown[account.provider] = until
-            }
+            // 限流:把原始响应正文存下来(持久化,卡片可展开查看),该账号进入粘滞——
+            // 退出自动刷新回路,只能手动刷新。不退避、不熔断、不定时自动恢复。
+            rateLimits[account.id] = RateLimitRecord(body: body, at: Date())
+            RateLimitsRepository.save(rateLimits)
+            // 有上次成功的快照就继续展示,但如实标注「限流中·旧数据」;从没成功过才落到限流态
             if let snap = states[account.id]?.snapshot {
-                states[account.id] = .loadedStale(snap, .rateLimited(nextRetryAt: until))
+                states[account.id] = .loadedStale(snap, .rateLimited)
             } else {
                 states[account.id] = .rateLimited
             }
-            return .rateLimited
         } catch QuotaError.parse {
             // 解析失败=接口字段多半变了,进降级态(引导看新版),而不是当成用户侧错误
             states[account.id] = .apiChanged
-            return .failed
         } catch {
             states[account.id] = .error(error.localizedDescription)
-            return .failed
         }
+    }
+
+    /// 解除限流粘滞:**只有一次成功的刷新才走到这里**(账号重新回到自动刷新回路)。
+    /// 任何失败都不清——401/parse 等分支看似「穿过了限流层」,但同名错误也可能在
+    /// 发出请求之前就地抛出(无 refresh token 的 unauthorized、钥匙串被拒的
+    /// missingCredentials 落进兜底 catch),本地失败不该销毁用户要查看的 429 现场,
+    /// 更不该把账号悄悄放回自动回路;离线/超时(URLError)同理。
+    /// 「成功才恢复」也和粘滞的语义自洽:恢复自动刷新的唯一凭证是端点真的又可用了。
+    private func clearRateLimit(_ id: UUID) {
+        guard rateLimits[id] != nil else { return }
+        rateLimits[id] = nil
+        RateLimitsRepository.save(rateLimits)
     }
 
     private func updateLabelIfNeeded(_ account: Account, email: String?, plan: String?) {
@@ -505,30 +459,21 @@ final class UsageStore {
         return true
     }
 
-    /// HTTP.errorBody 会把限流响应的 Retry-After 以 "Retry-After:<秒>s" 形式嵌进错误正文前缀,
-    /// 从中解析出服务端建议的重试等待秒数(没有该头则返回 nil)
-    nonisolated static func retryAfterSeconds(inErrorBody body: String) -> Double? {
-        guard let range = body.range(of: #"Retry-After:[0-9]+s"#, options: .regularExpression) else { return nil }
-        return Double(body[range].dropFirst("Retry-After:".count).dropLast(1))
-    }
-
-    /// 当前处于限流状态的账号数(含展示旧数据的),驱动面板底栏的限流提示。
-    /// 按 accounts 汇总(而非 states.values):防已移除账号的残留状态把数字虚高;
-    /// 重启恢复的 .restored 不算——那是中性状态,不是限流告警
+    /// 当前处于限流粘滞的账号数,驱动面板底栏的「N 个账号限流,待手动刷新」。
+    /// 按 rateLimits 记录统计而非展示态:粘滞是「被自动回路排除」的事实,
+    /// 记录才是它的唯一权威(粘滞期间手动刷新若又遇到别的错误,states 会被
+    /// 覆盖成 .error/.needsReauth,从展示态数就会漏计)。按 accounts 过滤
+    /// 防已移除账号的残留记录虚高(init 已 prune,双保险)。
     var throttledCount: Int {
-        accounts.reduce(0) { count, account in
-            switch states[account.id] {
-            case .loadedStale(_, .rateLimited), .rateLimited: return count + 1
-            default: return count
-            }
-        }
+        accounts.filter { rateLimits[$0.id] != nil }.count
     }
 
     func removeAccount(_ account: Account) {
         accounts.removeAll { $0.id == account.id }
         states[account.id] = nil
         cachedSortKeys[account.id] = nil
-        backoff429[account.id] = nil
+        rateLimits[account.id] = nil
+        RateLimitsRepository.save(rateLimits)
         diskSnapshots[account.id] = nil
         SnapshotsRepository.save(diskSnapshots)
         designProjects[account.id] = nil
