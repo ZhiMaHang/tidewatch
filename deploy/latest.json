@@ -1,6 +1,6 @@
 {
-  "latest": "0.1.6",
-  "notes": "限流不再装死:Claude 接口限流时,卡片会明确标注「限流中·显示某时刻的数据」并给出恢复时间,数字不再悄悄冻结让人以为刷新失效;多账号刷新改为单探针,不再连环触发限流,恢复更快;重启后先展示上次成功的额度数据,不再空白等待;面板底栏常驻显示当前版本号。",
-  "notes_en": "Rate limiting is now visible: when Claude's API throttles requests, cards clearly say \"rate limited — data from …\" with a recovery time instead of silently freezing. Multi-account refresh probes with a single request instead of hammering the endpoint, so it recovers faster. After a restart, your last known usage shows right away instead of blank cards. The panel footer now always shows the app version.",
+  "latest": "0.1.7",
+  "notes": "限流处置权交还给你:去掉自动退避与熔断。账号遇到限流(429)时,Tidewatch 会把服务端的原始响应保存下来,卡片上可展开查看、一键复制;该账号随即停止自动刷新(重启后也保持),手动刷新成功才恢复——不再有任何后台自动重试悄悄消耗惩罚期。",
+  "notes_en": "Rate limiting is now fully in your hands: automatic backoff and circuit breaking are gone. When an account hits a 429, Tidewatch saves the server's raw response — expandable and copyable right on the card — and stops auto-refreshing that account (even across restarts) until a manual refresh succeeds. No more background retries quietly feeding the penalty window.",
   "url": "https://github.com/ZhiMaHang/tidewatch/releases/latest"
 }

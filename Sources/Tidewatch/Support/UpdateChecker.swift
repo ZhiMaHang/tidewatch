@@ -4,7 +4,7 @@ import Foundation
 /// 开发态(`swift run`,无 bundle plist)回退到内置常量。
 enum AppVersion {
     /// 与 `scripts/build-app.sh` 写进 Info.plist 的 CFBundleShortVersionString 保持一致
-    static let fallback = "0.1.6"
+    static let fallback = "0.1.7"
 
     static var current: String {
         if let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
