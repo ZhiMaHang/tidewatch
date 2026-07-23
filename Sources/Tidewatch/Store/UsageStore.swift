@@ -454,6 +454,27 @@ final class UsageStore {
         SnapshotsRepository.save(diskSnapshots)
     }
 
+    /// 首次成功抓额度后学到该账号的组织 UUID 并持久化(供 [ClaudeDesktopCache] 兜底映射)。
+    /// 只在 claudeOrgUUID 尚缺时调一次;profile 拿不到就静默作罢,下次成功再试。
+    private func learnClaudeOrgUUID(_ id: UUID, accessToken: String) async {
+        guard let profile = try? await ClaudeProvider.fetchProfile(accessToken: accessToken),
+              let org = profile.orgUUID, !org.isEmpty else { return }
+        // 期间账号可能被移除或已被别的路径写入,读最新再落
+        guard let idx = accounts.firstIndex(where: { $0.id == id }),
+              accounts[idx].claudeOrgUUID != org else { return }
+        accounts[idx].claudeOrgUUID = org
+        AccountsRepository.save(accounts)
+    }
+
+    /// Claude 账号刷新拿不到新数据时的桌面缓存兜底:返回**比 existing 更新**的缓存快照,否则 nil。
+    /// 纯读本地文件,不发任何请求。非 Claude 账号一律 nil。
+    private func claudeDesktopFallback(_ account: Account, existing: UsageSnapshot?) -> UsageSnapshot? {
+        guard account.provider == .claude else { return nil }
+        let data = try? Data(contentsOf: ClaudeDesktopCache.fileURL)
+        return ClaudeDesktopCache.fallbackSnapshot(orgUUID: account.claudeOrgUUID, planType: account.planType,
+                                                   existingFetchedAt: existing?.fetchedAt, data: data)
+    }
+
     private func performRefresh(_ account: Account, mayRenew: Bool) async {
         // 入口前的状态要留一份:renewalDeferred 分支需要它才能把诊断态(.apiChanged 等)原样保住
         let previous = states[account.id]
@@ -463,8 +484,13 @@ final class UsageStore {
         do {
             switch account.provider {
             case .claude:
-                let (snapshot, _) = try await ClaudeProvider.fetchUsage(for: account, mayRenew: mayRenew)
+                let (snapshot, creds) = try await ClaudeProvider.fetchUsage(for: account, mayRenew: mayRenew)
                 markLoaded(account.id, snapshot)
+                // 首次成功后自学组织 UUID(供桌面缓存兜底映射),之后不再重复;best-effort、非致命。
+                // profile 在 api.anthropic.com,不碰 token 刷新的限流桶
+                if account.claudeOrgUUID == nil {
+                    Task { [weak self] in await self?.learnClaudeOrgUUID(account.id, accessToken: creds.accessToken) }
+                }
                 Task { [weak self] in await self?.refreshDesign(account) } // 有 design 登录才拉,best-effort
             case .codex:
                 let (snapshot, tokens) = try await CodexProvider.fetchUsage(for: account, mayRenew: mayRenew)
@@ -491,10 +517,17 @@ final class UsageStore {
             // 退出自动刷新回路,只能手动刷新。不退避、不熔断、不定时自动恢复。
             rateLimits[account.id] = RateLimitRecord(body: body, at: Date())
             RateLimitsRepository.save(rateLimits)
-            // 有上次成功的快照就继续展示,但如实标注「限流中·旧数据」;从没成功过才落到限流态
-            if let snap = states[account.id]?.snapshot {
+            // 兜底:限流拿不到新数据时,若 Claude 桌面应用缓存里有更新的采样就显示它(零请求、零 token 刷新)。
+            // 限流现场条(rateLimitResponse)不绑状态、只要 rateLimits 有记录就常驻,所以这里换成缓存数据
+            // 不会吞掉「已停摆·可展开原始响应」的提示——用户既看到可用数字,又知道该账号在限流。
+            let existing = states[account.id]?.snapshot
+            if let cache = claudeDesktopFallback(account, existing: existing) {
+                states[account.id] = .loadedStale(cache, .desktopCache)
+            } else if let snap = existing {
+                // 有上次成功的快照就继续展示,但如实标注「限流中·旧数据」
                 states[account.id] = .loadedStale(snap, .rateLimited)
             } else {
+                // 从没成功过、也没缓存可兜底,才落到光秃秃的限流态
                 states[account.id] = .rateLimited
             }
         } catch QuotaError.parse {

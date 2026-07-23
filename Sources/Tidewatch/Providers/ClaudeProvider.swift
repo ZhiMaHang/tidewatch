@@ -346,18 +346,34 @@ enum ClaudeProvider {
         return result
     }
 
-    static func fetchProfile(accessToken: String) async throws -> (email: String?, plan: String?) {
+    static func fetchProfile(accessToken: String) async throws -> (email: String?, plan: String?, orgUUID: String?) {
         let data = try await HTTP.getJSON(url: profileURL, headers: [
             "Authorization": "Bearer \(accessToken)",
             "anthropic-beta": betaHeader,
             "User-Agent": apiUserAgent,
         ])
-        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return (nil, nil) }
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return (nil, nil, nil) }
         let accountObj = obj["account"] as? [String: Any]
         let email = (accountObj?["email"] as? String) ?? (obj["email"] as? String)
         let orgObj = obj["organization"] as? [String: Any]
         let plan = (orgObj?["organization_type"] as? String) ?? (accountObj?["subscription_type"] as? String)
-        return (email, plan)
+        return (email, plan, parseOrgUUID(obj))
+    }
+
+    /// 从 profile 响应里取组织 UUID,用于映射 Claude 桌面应用缓存(见 [ClaudeDesktopCache])。
+    /// 字段路径未公开,防御式多候选:桌面应用本地存储用 `organization_uuid`(snake_case),
+    /// 与既有的 `organization_type` 同风格;也兜 `organization.{uuid,id}` 与顶层键。返回空串按 nil。
+    static func parseOrgUUID(_ obj: [String: Any]) -> String? {
+        let org = obj["organization"] as? [String: Any]
+        let account = obj["account"] as? [String: Any]
+        let candidates: [String?] = [
+            org?["uuid"] as? String,
+            org?["id"] as? String,
+            org?["organization_uuid"] as? String,
+            account?["organization_uuid"] as? String,
+            obj["organization_uuid"] as? String,
+        ]
+        return candidates.compactMap { $0 }.first { !$0.isEmpty }
     }
 
     // MARK: Token 刷新

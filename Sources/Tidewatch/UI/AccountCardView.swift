@@ -225,6 +225,16 @@ struct AccountCardView: View {
                 Image(systemName: "clock.badge.checkmark")
                     .foregroundStyle(.secondary)
             }
+        case .desktopCache:
+            // 中性蓝:数据真实但来自 Claude 桌面应用缓存(直连拿不到时的兜底),可能滞后、只有两窗。
+            // 若同时在限流,下方常驻的「限流响应」条会说明停摆原因,这里只交代数据来源与时刻
+            Label {
+                Text(L("来自 Claude 桌面缓存,截至 \(dataTime)", "From Claude desktop cache, as of \(dataTime)"))
+                    .font(.caption2)
+            } icon: {
+                Image(systemName: "externaldrive.badge.checkmark")
+                    .foregroundStyle(.blue)
+            }
         }
     }
 

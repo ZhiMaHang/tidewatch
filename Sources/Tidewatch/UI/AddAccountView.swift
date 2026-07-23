@@ -124,12 +124,15 @@ struct AddAccountView: View {
             let creds = try await ClaudeOAuth.exchange(pastedCode: pastedCode, pkce: pkce)
             var label = customLabel.trimmingCharacters(in: .whitespaces)
             var plan: String?
+            var orgUUID: String?
             if let profile = try? await ClaudeProvider.fetchProfile(accessToken: creds.accessToken) {
                 if label.isEmpty, let email = profile.email { label = email }
                 plan = profile.plan
+                orgUUID = profile.orgUUID // 供桌面缓存兜底映射;拿不到也不影响添加
             }
             if label.isEmpty { label = L("未命名 Claude", "Unnamed Claude") }
-            let account = Account(id: UUID(), provider: .claude, label: label, planType: plan, source: .managed, addedAt: Date())
+            var account = Account(id: UUID(), provider: .claude, label: label, planType: plan, source: .managed, addedAt: Date())
+            account.claudeOrgUUID = orgUUID
             if let data = try? JSONEncoder().encode(creds) {
                 KeychainStore.save(data, key: account.id.uuidString)
             }
@@ -151,9 +154,10 @@ struct AddAccountView: View {
             let claudeJSON = (NSHomeDirectory() as NSString).appendingPathComponent(".claude.json")
             if let data = try? Data(contentsOf: URL(fileURLWithPath: claudeJSON)),
                let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-               let oauthAccount = obj["oauthAccount"] as? [String: Any],
-               let email = oauthAccount["emailAddress"] as? String {
-                final.label = email
+               let oauthAccount = obj["oauthAccount"] as? [String: Any] {
+                if let email = oauthAccount["emailAddress"] as? String { final.label = email }
+                // oauthAccount.organizationUuid = 桌面缓存 plan-usage-history.json 的 org 键,直接采
+                if let org = oauthAccount["organizationUuid"] as? String, !org.isEmpty { final.claudeOrgUUID = org }
             }
             guard store.addAccount(final) else {
                 errorText = L("本机 Claude Code 凭据已经添加过了", "Local Claude Code credentials are already added")

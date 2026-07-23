@@ -83,6 +83,10 @@ struct Account: Codable, Identifiable, Equatable {
     var manualSubscriptionEndsAt: Date? = nil
     /// 付款方式(Apple Pay/Google Pay/信用卡)。信用卡只存后四位
     var payment: PaymentMethod? = nil
+    /// 该 Claude 账号的组织 UUID(= OAuth profile 的 organization_uuid),成功抓一次额度后自学并持久化。
+    /// 用途:把 Claude 桌面应用缓存 `plan-usage-history.json`(按 org 索引)映射回本账号,
+    /// 作为刷新拿不到新数据(限流等)时的零请求兜底数据源。老 accounts.json 缺此键解码为 nil
+    var claudeOrgUUID: String? = nil
 }
 
 struct DesignProject: Identifiable, Equatable {
@@ -129,6 +133,10 @@ enum StaleReason: Equatable {
     /// access token 已到期,但本轮的续期名额轮到了别的账号(见 UsageStore.renewCursor):
     /// 本轮一个请求都没发,继续展示旧数据,下一轮或再下一轮就轮到它。中性状态,不是故障
     case renewalDeferred
+    /// 展示的是 Claude 桌面应用缓存(`plan-usage-history.json`)的数据,不是本次 OAuth 直接抓到的:
+    /// 刷新拿不到新数据(通常是限流)时用它兜底,零请求、零 token 刷新。数据时刻见快照 fetchedAt。
+    /// 中性偏提示:数据真实但可能滞后(取决于桌面应用上次采样),且只有 5 小时/本周两窗
+    case desktopCache
 }
 
 enum AccountState: Equatable {
