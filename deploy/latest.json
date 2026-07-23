@@ -1,6 +1,6 @@
 {
-  "latest": "0.1.7",
-  "notes": "限流处置权交还给你:去掉自动退避与熔断。账号遇到限流(429)时,Tidewatch 会把服务端的原始响应保存下来,卡片上可展开查看、一键复制;该账号随即停止自动刷新(重启后也保持),手动刷新成功才恢复——不再有任何后台自动重试悄悄消耗惩罚期。",
-  "notes_en": "Rate limiting is now fully in your hands: automatic backoff and circuit breaking are gone. When an account hits a 429, Tidewatch saves the server's raw response — expandable and copyable right on the card — and stops auto-refreshing that account (even across restarts) until a manual refresh succeeds. No more background retries quietly feeding the penalty window.",
+  "latest": "0.1.8",
+  "notes": "修复 Claude 账号刷新反复卡在「限流中」、隔一阵就得重新登录的问题。根因是刷新 token 用的 User-Agent 恰好落在服务端按 UA 拦截的那一类,自动刷新持续 429、access token 过期后只能重登;现改用真实 Claude Code CLI 的 UA 越过这道拦截(usage 拉取的 UA 不变)。另新增「续期名额轮转」:同一批账号的 token 续期时刻自动错开、每轮只放行一个续期,避免同批到期时挤成一次突发把限流打上;token 到期但本轮没轮到名额的账号会中性地显示「待续期」并继续展示上次数据,无需你操作。",
+  "notes_en": "Fixes Claude accounts getting stuck on \"rate limited\" and needing repeated re-logins. Root cause: the User-Agent used for token refresh happened to fall into the bucket the server filters by UA — refreshes kept getting 429'd, so once the access token expired the only way out was logging in again. Refresh now uses the real Claude Code CLI User-Agent to get past that filter (the usage-fetch UA is unchanged). Also adds renewal-slot rotation: token renewals for a batch of accounts are spread out with only one renewal allowed per round, so a batch expiring together no longer bursts into the rate limit. An account whose token has expired but didn't get this round's slot simply shows a neutral \"awaiting renewal\" with its last data — no action needed.",
   "url": "https://github.com/ZhiMaHang/tidewatch/releases/latest"
 }
