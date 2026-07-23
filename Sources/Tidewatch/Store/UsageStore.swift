@@ -150,7 +150,13 @@ final class UsageStore {
 
     private var refreshLoop: Task<Void, Never>?
     private var updateLoop: Task<Void, Never>?
-    private var inFlight: [UUID: Task<Void, Never>] = [:]
+    /// 在飞的刷新任务,连同它当时是否持有续期名额(见 refresh 里的去重分支)
+    private var inFlight: [UUID: (task: Task<Void, Never>, mayRenew: Bool)] = [:]
+    /// 轮次序号(每次 refreshAll 自增一次)与「各账号上次拿到续期名额的轮次」(缺省 0 = 从未)。
+    /// 不持久化:重启后归零,于是重启后第一个名额恒定发给 accounts.json 里的第一个 Claude 账号。
+    /// 可接受(重启不频繁),而且正因为可预测,真机验证时能事先预言受益者是谁
+    private var roundCounter: UInt64 = 0
+    private var lastGrantRound: [UUID: UInt64] = [:]
     /// 限流粘滞:账号 → 最近一次 429 的原始现场(响应正文 + 时间),持久化(见 RateLimitsRepository)。
     /// 记录存在即该账号退出自动刷新回路(重启后依旧),卡片可展开查看原始响应;
     /// 只有手动刷新**成功**才清除(见 clearRateLimit)。不做退避、不做熔断、不自动恢复——
@@ -305,6 +311,7 @@ final class UsageStore {
         // 同 provider 内串行 + 相邻请求错开一点;不同 provider 之间仍并发(不同 host,互不影响)。
         // 某账号吃到 429 不影响本轮其余账号:各自请求、各自留现场、各自进粘滞。
         let byProvider = Dictionary(grouping: accounts, by: { $0.provider })
+        let grants = grantRenewals(byProvider: byProvider, force: force)
         await withTaskGroup(of: Void.self) { group in
             for (_, providerAccounts) in byProvider {
                 group.addTask { [weak self] in
@@ -314,7 +321,7 @@ final class UsageStore {
                         // 回路被取消(如改刷新间隔触发 restartLoop)时上面的 sleep 立即返回,
                         // 错峰就没了——直接停掉本轮剩余账号,别退化成背靠背连击
                         if Task.isCancelled { break }
-                        await self?.refresh(account, force: force)
+                        await self?.refresh(account, force: force, mayRenew: grants.contains(account.id))
                     }
                 }
             }
@@ -322,26 +329,102 @@ final class UsageStore {
         lastRefreshAt = Date()
     }
 
+    /// 每轮每个 provider 只发放**一个**续期名额,在本轮真会去刷新的账号里轮转发放。
+    ///
+    /// 抓额度和续期是两件不同的事,代价差着量级:抓额度打 usage 端点,便宜,失败也只是这一次没数;
+    /// 续期打 token 端点,而那个桶和本机每一个 Claude Code 会话共用,一旦打进限流所有账号一起冻
+    /// (2026-07-20:4 个账号同批到期,4 次刷新挤在 5 秒内连发,全部 429,冻了一天半)。
+    /// 所以抓额度可以每轮全量,续期必须限量。
+    ///
+    /// 名额轮转与 ClaudeProvider.renewLead 的错开提前量是两道独立的保险,缺一不可:
+    /// 提前量负责让「同批铸造的 token」在正常运行时自然错开续期时刻;名额负责兜住提前量
+    /// 失效的情形——App 关了几小时再打开,一上来所有 token 都已过期,提前量此时一点用没有。
+    /// 名额发放的纯逻辑。抽成 nonisolated static + 显式传入跳过集合与轮转状态,
+    /// 是为了能脱离 MainActor 与磁盘/钥匙串直接单测(测试禁止构造 UsageStore)。
+    nonisolated static func renewalGrants(
+        byProvider: [Provider: [Account]],
+        skipped: Set<UUID>,
+        force: Bool,
+        round: UInt64,
+        lastGrantRound: inout [UUID: UInt64]
+    ) -> Set<UUID> {
+        var grants: Set<UUID> = []
+        for (provider, providerAccounts) in byProvider {
+            // GLM 是纯 API key,没有 OAuth 续期路径(GLMProvider.fetchUsage 根本不接 mayRenew),
+            // 给它发名额只是白白空转一个轮转位
+            guard provider != .glm else { continue }
+            // 只在本轮真会去刷新的账号里发:名额落到被跳过的账号(粘滞/待重登)上就白白浪费一轮
+            let eligible = force ? providerAccounts : providerAccounts.filter { !skipped.contains($0.id) }
+            guard !eligible.isEmpty else { continue }
+            // 最久未拿到名额者优先;并列(含全部从未拿过)时 min 取首个,顺序可预测。
+            //
+            // 别退回「下标游标取模」:eligible 集合在轮次之间会变长变短(账号进出粘滞、
+            // force 与非 force 交替),对一张长度会变的表取模**不是轮转**——它会稳定跳过
+            // 某些下标,把账号永久饿死。测试实证过:4 账号集合在 2/4 之间交替,
+            // 1000 轮里有账号一次名额都拿不到。LRG 则有界:N 个持续 eligible 的账号
+            // 任何一个最多等 N 轮
+            let picked = eligible.min { (lastGrantRound[$0.id] ?? 0) < (lastGrantRound[$1.id] ?? 0) }!
+            grants.insert(picked.id)
+            lastGrantRound[picked.id] = round
+        }
+        return grants
+    }
+
+    private func grantRenewals(byProvider: [Provider: [Account]], force: Bool) -> Set<UUID> {
+        roundCounter &+= 1
+        let skipped = Set(accounts.filter { rateLimits[$0.id] != nil || isNeedsReauth($0.id) }.map(\.id))
+        return Self.renewalGrants(byProvider: byProvider, skipped: skipped, force: force,
+                                  round: roundCounter, lastGrantRound: &lastGrantRound)
+    }
+
+    /// renewalDeferred 的状态映射。纯函数,`previous` 是 performRefresh 置 .loading **之前**的状态。
+    nonisolated static func stateAfterRenewalDeferred(previous: AccountState?, throttled: Bool) -> AccountState {
+        if let snap = previous?.snapshot {
+            // 粘滞账号的主导事实是「不会自动恢复」,标成待续期会误导成「下轮自动就好」
+            return .loadedStale(snap, throttled ? .rateLimited : .renewalDeferred)
+        }
+        if throttled { return .rateLimited }
+        switch previous {
+        case .apiChanged, .error, .needsReauth:
+            // 无快照时保留原有诊断:接口变更/待重登比「本轮没轮到名额」重要得多,别被盖掉
+            return previous!
+        default:
+            // 绝不能返回 .loading:卡片会永久转圈,而且 hasProblem 不认 .loading,
+            // 菜单栏告警也会一起消失——本该中性的「本轮没刷」表现成「卡住且无人告警」
+            return .error(L("等待续期名额,本轮未刷新", "Waiting for a renewal slot; not refreshed this round"))
+        }
+    }
+
+    private func isNeedsReauth(_ id: UUID) -> Bool {
+        if case .needsReauth = states[id] ?? .idle { return true }
+        return false
+    }
+
     /// force=false 时跳过两类账号:已标记需重登的(避免每轮空刷 invalid_grant),
     /// 与限流粘滞的(上次吃过 429,见 rateLimits——只能手动刷新,自动回路不碰)。
     /// 同一账号只允许一个进行中的刷新,重复触发直接等已有任务。
-    func refresh(_ account: Account, force: Bool = false) async {
+    /// `mayRenew` 默认 true:单卡手动刷新、新增账号这类用户直接发起的单账号操作
+    /// 不受名额约束(只有一个账号,不构成突发);只有 refreshAll 的批量轮次才发名额。
+    func refresh(_ account: Account, force: Bool = false, mayRenew: Bool = true) async {
         if let existing = inFlight[account.id] {
-            await existing.value
-            return
+            await existing.task.value
+            // 在飞那次没有续期名额而这次有(典型:自动轮次正跑着,用户点了手动刷新),
+            // 就不能跟着它一起返回——否则用户点了刷新却一个请求都没发出去,
+            // 「待续期」账号唯一的即时恢复通道被静默吞掉
+            if !(mayRenew && !existing.mayRenew) { return }
         }
         if !force {
             if case .needsReauth = states[account.id] ?? .idle { return }
             if rateLimits[account.id] != nil { return }
         }
         let task = Task {
-            await self.performRefresh(account)
+            await self.performRefresh(account, mayRenew: mayRenew)
             // 完成即清,不等创建者的 continuation 恢复:那一跳间隙里进来的手动刷新
             // 会命中上面的 dedup 分支、await 一个已完成的任务然后静默返回——
             // 粘滞账号唯一的恢复通道被无声吞掉
             self.inFlight[account.id] = nil
         }
-        inFlight[account.id] = task
+        inFlight[account.id] = (task, mayRenew)
         await task.value
         // 账号可能在刷新途中被移除:removeAccount 清过的东西不该被在飞任务写回来
         // (states 幽灵会虚高 throttledCount;markLoaded 复活的 diskSnapshots 条目
@@ -371,18 +454,20 @@ final class UsageStore {
         SnapshotsRepository.save(diskSnapshots)
     }
 
-    private func performRefresh(_ account: Account) async {
-        if states[account.id]?.snapshot == nil {
+    private func performRefresh(_ account: Account, mayRenew: Bool) async {
+        // 入口前的状态要留一份:renewalDeferred 分支需要它才能把诊断态(.apiChanged 等)原样保住
+        let previous = states[account.id]
+        if previous?.snapshot == nil {
             states[account.id] = .loading
         }
         do {
             switch account.provider {
             case .claude:
-                let (snapshot, _) = try await ClaudeProvider.fetchUsage(for: account)
+                let (snapshot, _) = try await ClaudeProvider.fetchUsage(for: account, mayRenew: mayRenew)
                 markLoaded(account.id, snapshot)
                 Task { [weak self] in await self?.refreshDesign(account) } // 有 design 登录才拉,best-effort
             case .codex:
-                let (snapshot, tokens) = try await CodexProvider.fetchUsage(for: account)
+                let (snapshot, tokens) = try await CodexProvider.fetchUsage(for: account, mayRenew: mayRenew)
                 markLoaded(account.id, snapshot)
                 updateLabelIfNeeded(account, email: snapshot.email ?? tokens.id_token.flatMap(CodexProvider.email(fromIDToken:)), plan: snapshot.planType)
             case .glm:
@@ -393,6 +478,14 @@ final class UsageStore {
             clearRateLimit(account.id)
         } catch QuotaError.unauthorized {
             states[account.id] = .needsReauth(L("凭据已失效,请重新登录", "Credentials expired, please sign in again"))
+        } catch QuotaError.renewalDeferred {
+            // token 到期但本轮没轮到续期名额,**一个请求都没发出去**。保留旧快照如实标注,
+            // 绝不落错误态:这是限量在按设计生效,不是故障。下一轮或再下一轮就轮到它。
+            //
+            // 粘滞账号例外:它的主导事实是「限流停摆,只有手动刷新成功才恢复」。
+            // 标成「待续期」会误导成「下轮自动就好」,而粘滞根本不会自动恢复
+            states[account.id] = Self.stateAfterRenewalDeferred(
+                previous: previous, throttled: rateLimits[account.id] != nil)
         } catch QuotaError.http(429, let body) {
             // 限流:把原始响应正文存下来(持久化,卡片可展开查看),该账号进入粘滞——
             // 退出自动刷新回路,只能手动刷新。不退避、不熔断、不定时自动恢复。
@@ -474,6 +567,7 @@ final class UsageStore {
         cachedSortKeys[account.id] = nil
         rateLimits[account.id] = nil
         RateLimitsRepository.save(rateLimits)
+        lastGrantRound[account.id] = nil
         diskSnapshots[account.id] = nil
         SnapshotsRepository.save(diskSnapshots)
         designProjects[account.id] = nil

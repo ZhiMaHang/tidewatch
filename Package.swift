@@ -8,6 +8,11 @@ let package = Package(
         .executableTarget(
             name: "Tidewatch",
             path: "Sources/Tidewatch"
+        ),
+        .testTarget(
+            name: "TidewatchTests",
+            dependencies: ["Tidewatch"],
+            path: "Tests/TidewatchTests"
         )
     ]
 )

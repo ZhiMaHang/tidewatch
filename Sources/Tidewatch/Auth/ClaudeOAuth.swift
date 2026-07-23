@@ -30,6 +30,9 @@ enum ClaudeOAuth {
         let code = parts[0].components(separatedBy: "&")[0]
         let state = parts.count > 1 ? parts[1] : pkce.state
 
+        // 兑换和刷新一样走 token 端点(console/platform),同样受按 UA 指纹的边缘拦截。
+        // 兑换从前不设 UA、靠 URLSession 默认 UA 侥幸放行(所以重登一直能用);显式钉成真实 CLI 的 UA,
+        // 让重登也骑在那个 Anthropic 无法封禁的自家客户端身份上,免得默认 UA 哪天被收进黑名单。
         let data = try await HTTP.postJSON(url: ClaudeProvider.tokenURL, body: [
             "grant_type": "authorization_code",
             "code": code,
@@ -37,7 +40,7 @@ enum ClaudeOAuth {
             "client_id": ClaudeProvider.clientID,
             "redirect_uri": redirectURI,
             "code_verifier": pkce.verifier,
-        ])
+        ], headers: ["User-Agent": ClaudeProvider.tokenUserAgent])
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let access = obj["access_token"] as? String else {
             throw QuotaError.oauth(L("换取 token 失败", "Failed to exchange the token"))

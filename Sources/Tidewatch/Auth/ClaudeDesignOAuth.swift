@@ -39,7 +39,7 @@ enum ClaudeDesignOAuth {
             "client_id": DesignProvider.clientID,
             "redirect_uri": redirectURI,
             "code_verifier": pkce.verifier,
-        ])
+        ], headers: ["User-Agent": ClaudeProvider.tokenUserAgent]) // token 端点:真实 CLI UA,越过边缘 UA 拦截
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let access = obj["access_token"] as? String else {
             throw QuotaError.oauth(L("换取 token 失败", "Failed to exchange the token"))

@@ -119,7 +119,10 @@ enum CodexProvider {
 
     // MARK: 额度
 
-    static func fetchUsage(for account: Account) async throws -> (UsageSnapshot, CodexTokens) {
+    /// `mayRenew`:本轮该账号是否持有「续期名额」(由 UsageStore 轮转发放)。Codex 的 token 里
+    /// 没有过期时刻可读(CodexTokens 无 expires 字段),所以只有 401 这条兜底续期路径——
+    /// 但它同样要限量:多个 Codex 账号的 token 同批到期时会一起 401,不限量就是一次突发。
+    static func fetchUsage(for account: Account, mayRenew: Bool) async throws -> (UsageSnapshot, CodexTokens) {
         // 按凭据存储串行化:refresh token 单次有效,同一存储绝不能并发刷新;
         // 锁内才读 token,排队者会拿到前一次刷新后的新 token,不会重放旧的
         try await KeyedLocks.shared.run(credentialLockKey(account)) {
@@ -128,6 +131,7 @@ enum CodexProvider {
                 let snapshot = try await fetchUsage(tokens: tokens)
                 return (snapshot, tokens)
             } catch QuotaError.unauthorized {
+                guard mayRenew else { throw QuotaError.renewalDeferred }
                 tokens = try await refresh(tokens)
                 try persistOrRescue(tokens, for: account)
                 let snapshot = try await fetchUsage(tokens: tokens)

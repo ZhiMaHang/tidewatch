@@ -126,6 +126,9 @@ enum StaleReason: Equatable {
     case rateLimited
     /// 重启后从磁盘恢复的上次数据,首轮刷新还没跑完(中性状态,不是故障)
     case restored
+    /// access token 已到期,但本轮的续期名额轮到了别的账号(见 UsageStore.renewCursor):
+    /// 本轮一个请求都没发,继续展示旧数据,下一轮或再下一轮就轮到它。中性状态,不是故障
+    case renewalDeferred
 }
 
 enum AccountState: Equatable {
@@ -157,6 +160,9 @@ enum QuotaError: LocalizedError {
     case missingCredentials(String)
     case parse(String)
     case oauth(String)
+    /// token 已到期需要续期,但本轮没轮到续期名额——本轮不发任何请求,留到后面某轮。
+    /// 这不是失败:它是额度控制**生效**的信号,调用方应保留旧快照、不要落错误态
+    case renewalDeferred
 
     var errorDescription: String? {
         switch self {
@@ -165,6 +171,7 @@ enum QuotaError: LocalizedError {
         case .missingCredentials(let detail): return detail
         case .parse(let detail): return L("响应解析失败: ", "Failed to parse response: ") + detail
         case .oauth(let detail): return L("OAuth 失败: ", "OAuth failed: ") + detail
+        case .renewalDeferred: return L("等待续期名额", "Waiting for a renewal slot")
         }
     }
 }

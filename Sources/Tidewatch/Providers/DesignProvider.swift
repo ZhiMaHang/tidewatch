@@ -160,7 +160,7 @@ enum DesignProvider {
                 "grant_type": "refresh_token",
                 "refresh_token": refreshToken,
                 "client_id": creds.clientId ?? clientID,
-            ], headers: ["User-Agent": ClaudeProvider.userAgent])
+            ], headers: ["User-Agent": ClaudeProvider.tokenUserAgent]) // token 端点:走真实 CLI UA 越过边缘拦截
         } catch QuotaError.http(let code, _) where code == 400 {
             throw QuotaError.unauthorized
         }
@@ -198,7 +198,7 @@ enum DesignProvider {
         let client = MCPClient(url: mcpURL, headers: [
             "Authorization": "Bearer \(token)",
             "anthropic-beta": ClaudeProvider.betaHeader,
-            "User-Agent": ClaudeProvider.userAgent,
+            "User-Agent": ClaudeProvider.apiUserAgent, // api.anthropic.com MCP:保持 claude-code/ 前缀
         ])
         let data = try await client.callToolText(name: "list_projects", arguments: [:])
         guard let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [] }

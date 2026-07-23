@@ -96,10 +96,14 @@ private func checkOne(_ account: Account) async {
     do {
         let snapshot: UsageSnapshot
         switch account.provider {
+        // --check 无视名额、逐个账号串行连打全部账号。**必须传 lead: 0**——
+        // 否则叠加 30~90 分钟的提前量后,离到期还有 40 分钟的账号会被判定该续期,
+        // 于是几秒内对每个账号各发一次续期请求,正是 2026-07-20 事故的同构形态。
+        // lead: 0 让它退回「快到期才续」的旧语义(由 RenewalDecisionTests 锁住)
         case .claude:
-            (snapshot, _) = try await ClaudeProvider.fetchUsage(for: account)
+            (snapshot, _) = try await ClaudeProvider.fetchUsage(for: account, mayRenew: true, lead: 0)
         case .codex:
-            (snapshot, _) = try await CodexProvider.fetchUsage(for: account)
+            (snapshot, _) = try await CodexProvider.fetchUsage(for: account, mayRenew: true)
         case .glm:
             snapshot = try await GLMProvider.fetchUsage(for: account)
         }

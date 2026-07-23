@@ -216,6 +216,15 @@ struct AccountCardView: View {
                 Image(systemName: "clock.arrow.circlepath")
                     .foregroundStyle(.secondary)
             }
+        case .renewalDeferred:
+            // 中性灰:轮到它续期就自动恢复,用户什么都不用做(想立刻续可以点这张卡的刷新)
+            Label {
+                Text(L("待续期,显示 \(dataTime) 的数据", "Awaiting renewal — showing data from \(dataTime)"))
+                    .font(.caption2)
+            } icon: {
+                Image(systemName: "clock.badge.checkmark")
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
