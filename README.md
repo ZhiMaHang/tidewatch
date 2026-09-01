@@ -6,6 +6,12 @@
 
 界面中文,自动适配浅色/深色。
 
+> 💡 **先看看 [CodexBar](https://github.com/steipete/CodexBar)——同类里功能更强的那个,我们更推荐它。**
+> 同样是 macOS 菜单栏额度应用,但覆盖的提供方比 Tidewatch 多得多(据其 README 已支持 60+ 家),
+> 已做 **Apple 公证**、可 `brew install --cask codexbar` 一行装、自带自动更新,还有 CLI 版。
+> **如果你只是想把各家 AI 编码额度看明白,直接用 CodexBar。**
+> Tidewatch 仍然开源可用、会继续修,但功能上不与它比,自己按需选。
+
 > ⚠️ Claude 明确不允许接入自动化工具，监控claude额度可能会导致封号。
 
 > ⚠️ Tidewatch 读取的是各家 CLI / 网页端的**非官方、未公开文档接口**(逆向自 Claude Code、Codex CLI、z.ai 网页版)。只用来看**你自己账号**的用量。接口随时可能变动失效,详见 [重要说明](#重要说明必读)。
@@ -51,6 +57,8 @@
 ## 安装
 
 要求 **macOS 14+**。通用包(Apple 芯片 + Intel)。
+
+> 想省事的话:[CodexBar](https://github.com/steipete/CodexBar) 已公证、`brew install --cask codexbar` 一行装完,不用下面这些绕 Gatekeeper 的步骤。
 
 ### 下载 .dmg(推荐)
 
