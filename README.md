@@ -6,6 +6,8 @@
 
 界面中文,自动适配浅色/深色。
 
+**官网**:[zhimahang.com/tidewatch](https://zhimahang.com/tidewatch/)(智码航出品)
+
 > 💡 **先看看 [CodexBar](https://github.com/steipete/CodexBar)——同类里功能更强的那个,我们更推荐它。**
 > 同样是 macOS 菜单栏额度应用,但覆盖的提供方比 Tidewatch 多得多(据其 README 已支持 60+ 家),
 > 已做 **Apple 公证**、可 `brew install --cask codexbar` 一行装、自带自动更新,还有 CLI 版。
